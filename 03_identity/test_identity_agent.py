@@ -30,6 +30,7 @@ CONFIG_FILE = Path("inbound_authorizer.json")
 OAUTH_PROVIDER = ""
 OAUTH_SCOPE = ""
 RUNTIME_URL = ""
+BASE64_BLOCK_SIZE = 4 # Base64 encoding processes data in 4-character blocks
 with CONFIG_FILE.open('r') as f:
     config = json.load(f)
     OAUTH_PROVIDER = config["provider"]["name"]
@@ -37,18 +38,34 @@ with CONFIG_FILE.open('r') as f:
     RUNTIME_URL = config["runtime"]["url"]
 
 
-@tool(name="cost_estimator_tool", description="Estimate cost of AWS from architecture description")
+# Internal function with authentication decorator
 @requires_access_token(
-    provider_name= OAUTH_PROVIDER,
-    scopes= [OAUTH_SCOPE],
-    auth_flow= "M2M",
-    force_authentication= False)
-async def cost_estimator_tool(architecture_description, access_token: str) -> str:
+    provider_name=OAUTH_PROVIDER,
+    scopes=[OAUTH_SCOPE],
+    auth_flow="M2M",
+    force_authentication=False
+)
+async def _cost_estimator_with_auth(architecture_description: str, access_token: str = None) -> str:
+    """Internal function that handles the actual API call with authentication"""
     session_id = f"runtime-with-identity-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')}"
+
     if access_token:
         logger.info("✅ Successfully load the access token from AgentCore Identity!")
-        for element in access_token.split("."):
-            logger.info(f"\t{json.loads(base64.b64decode(element).decode())}")
+        # Parse and log JWT token parts for debugging
+        token_parts = access_token.split(".")
+        for i, part in enumerate(token_parts[:2]):  # Only decode header and payload, not signature
+            try:
+                # Add padding if needed (JWT Base64 encoding may omit trailing '=' characters)
+                num_padding_chars = BASE64_BLOCK_SIZE - (len(part) % BASE64_BLOCK_SIZE)
+                if num_padding_chars != BASE64_BLOCK_SIZE:
+                    part_for_decode = part + '=' * num_padding_chars
+                else:
+                    part_for_decode = part
+
+                decoded = base64.b64decode(part_for_decode)
+                logger.info(f"\tToken part {i}: {json.loads(decoded.decode())}")
+            except Exception as e:
+                logger.warning(f"\tCould not decode token part {i}: {e}")
 
     headers = {
         "Authorization": f"Bearer {access_token}",
@@ -67,6 +84,26 @@ async def cost_estimator_tool(architecture_description, access_token: str) -> st
     return response.text
 
 
+# Tool function exposed to LLM (without access_token parameter)
+@tool(
+    name="cost_estimator_tool",
+    description="Estimate cost of AWS from architecture description"
+)
+async def cost_estimator_tool(architecture_description: str) -> str:
+    """
+    Estimate AWS costs based on architecture description.
+
+    Args:
+        architecture_description: Description of the AWS architecture to estimate costs for
+
+    Returns:
+        Cost estimation result as a string
+    """
+    # Call the internal function with authentication
+    # The access_token will be automatically injected by the decorator
+    return await _cost_estimator_with_auth(architecture_description)
+
+
 async def main():
     """Main test function"""
     # Parse command line arguments
@@ -81,7 +118,7 @@ async def main():
 
     agent = Agent(
         system_prompt=(
-            "Your are a professional solution architect. "
+            "You are a professional solution architect. "
             "You will receive architecture descriptions or requirements from customers. "
             "Please provide estimate by using 'cost_estimator_tool'"
         ),

@@ -1,17 +1,17 @@
 """
-AWS Cost Estimator Agent with AgentCore Memory
+AgentCore Memory付きAWSコスト見積もりエージェント
 
-This implementation demonstrates AgentCore Memory capabilities by enhancing
-the AWS Cost Estimator with both short-term and long-term memory features.
+この実装は、AWSコスト見積もりを短期と長期のメモリ機能で
+拡張することでAgentCore Memory機能を実演します。
 
-Key Features:
-1. Short-term Memory: Stores multiple cost estimations within a session for comparison
-2. Long-term Memory: Learns user decision patterns and preferences over time
-3. Comparison Feature: Enables side-by-side comparison of multiple estimates
-4. Decision Insights: Provides personalized recommendations based on historical patterns
+主要な機能：
+1. 短期メモリ： 比較のためにセッション内の複数のコスト見積もりを保存
+2. 長期メモリ： 時間の経過とともにユーザーの意思決定パターンと好みを学習
+3. 比較機能： 複数の見積もりの並列比較を可能に
+4. 意思決定インサイト： 過去のパターンに基づいたパーソナライズされた推奨事項を提供
 
-The AgentWithMemory class integrates memory functionality with the existing
-cost estimator agent, providing a comprehensive example of memory usage patterns.
+AgentWithMemoryクラスは既存のコスト見積もりエージェントと
+メモリ機能を統合し、メモリ使用パターンの包括的な例を提供します。
 """
 
 import sys
@@ -23,7 +23,7 @@ import json
 import boto3
 from datetime import datetime
 
-# Configure logging for debugging and monitoring
+# デバッグと監視のためのログ設定を構成
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',

@@ -1,10 +1,10 @@
 """
-Test the AgentCore Gateway by invoking the aws_cost_estimation tool
+aws_cost_estimationツールを呼び出してAgentCore Gatewayをテスト
 
-This script demonstrates how to:
-1. Obtain an OAuth token from Cognito
-2. Call the Gateway's MCP endpoint
-3. Invoke the aws_cost_estimation tool
+このスクリプトは以下の方法を実演します：
+1. CognitoからOAuthトークンを取得する
+2. GatewayのMCPエンドポイントを呼び出す
+3. aws_cost_estimationツールを呼び出す
 """
 
 import json
@@ -21,14 +21,14 @@ from strands.tools.mcp import MCPClient
 from mcp.client.streamable_http import streamablehttp_client
 from bedrock_agentcore.identity.auth import requires_access_token
 
-# Configure logging with more verbose output
+# より詳細な出力でログを設定
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
 
-# Add the parent directory to the path to import from 01_code_interpreter
+# 01_code_interpreterからインポートするために親ディレクトリをパスに追加
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "01_code_interpreter"))
 from cost_estimator_agent.cost_estimator_agent import AWSCostEstimatorAgent  # noqa: E402
 

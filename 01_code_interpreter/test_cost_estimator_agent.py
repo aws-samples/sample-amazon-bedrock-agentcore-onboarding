@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
-"""Simple test for AWS Cost Estimation Agent"""
+"""AWSコスト見積もりエージェントのシンプルなテスト"""
 
 import asyncio
 import argparse
 from cost_estimator_agent.cost_estimator_agent import AWSCostEstimatorAgent
 
 async def test_streaming(architecture: str, verbose: bool = True):
-    """Test streaming cost estimation following Strands best practices"""
+    """Strandsのベストプラクティスに従ったストリーミングコスト見積もりをテスト"""
     if verbose:
         print("\n🔄 Testing streaming cost estimation...")
     agent = AWSCostEstimatorAgent()
     
-    # Use provided test case or default
+    # 提供されたテストケースまたはデフォルトを使用
     
     try:
         total_chunks = 0
@@ -19,13 +19,13 @@ async def test_streaming(architecture: str, verbose: bool = True):
         
         async for event in agent.estimate_costs_stream(architecture):
             if "data" in event:
-                # According to Strands documentation, each event["data"] should contain
+                # Strandsドキュメントによると、各event["data"]は
                 # only the new delta content, so we can print it directly
                 chunk_data = str(event["data"])
                 if verbose:
                     print(chunk_data, end="", flush=True)
                 
-                # Track metrics for debugging
+                # デバッグ用のメトリクスを追跡
                 total_chunks += 1
                 total_length += len(chunk_data)
                 
@@ -44,12 +44,12 @@ async def test_streaming(architecture: str, verbose: bool = True):
         return False
 
 def test_regular(architecture: str = "One EC2 t3.micro instance running 24/7", verbose: bool = True):
-    """Test regular (non-streaming) cost estimation"""
+    """通常の（非ストリーミング）コスト見積もりをテスト"""
     if verbose:
         print("📄 Testing regular cost estimation...")
     agent = AWSCostEstimatorAgent()
     
-    # Use provided test case or default
+    # 提供されたテストケースまたはデフォルトを使用
     
     try:
         result = agent.estimate_costs(architecture)
@@ -64,7 +64,7 @@ def test_regular(architecture: str = "One EC2 t3.micro instance running 24/7", v
 
 
 def parse_arguments():
-    """Parse command line arguments"""
+    """コマンドライン引数を解析"""
     parser = argparse.ArgumentParser(description='Test AWS Cost Estimation Agent')
     
     parser.add_argument(
@@ -100,7 +100,7 @@ def parse_arguments():
 async def main():
     args = parse_arguments()
     
-    # Handle verbose flag
+    # 詳細出力フラグを処理
     verbose = args.verbose and not args.quiet
     
     print("🚀 Testing AWS Cost Agent")
@@ -110,14 +110,14 @@ async def main():
     
     results = {}
     
-    # Run selected tests
+    # 選択されたテストを実行
     if 'regular' in args.tests:
         results['regular'] = test_regular(args.architecture, verbose)
     
     if 'streaming' in args.tests:
         results['streaming'] = await test_streaming(args.architecture, verbose)
     
-    # Print results
+    # 結果を印刷
     if verbose:
         print("\n📋 Test Results:")
         for test_name, success in results.items():
@@ -129,7 +129,7 @@ async def main():
         else:
             print("⚠️ Some tests failed - check logs above")
     
-    # Return exit code based on results
+    # 結果に基づいて終了コードを返す
     return 0 if all(results.values()) else 1
 
 if __name__ == "__main__":

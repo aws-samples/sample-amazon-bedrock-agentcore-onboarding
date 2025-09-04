@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-AgentCore Runtime - Agent Registration and Management Tool
+AgentCore Runtime - エージェント登録・管理ツール
 
-A simple tool for deploying AI agents to Amazon Bedrock AgentCore Runtime.
+Amazon Bedrock AgentCore RuntimeにAIエージェントをデプロイするためのシンプルなツール。
 """
 
 import json
@@ -15,7 +15,7 @@ from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from botocore.exceptions import ClientError
 
-# Configure logging
+# ログ設定を構成
 logging.basicConfig(
     level=logging.ERROR,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -23,13 +23,13 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 console = Console()
 
-# Constants
+# 定数
 DEFAULT_REGION = boto3.Session().region_name
 DEPLOYMENTS_DIR = Path('./deployment')
 
 
 class AgentPreparer:
-    """Handles preparation of agent for deployment"""
+    """デプロイ用エージェントの準備を処理"""
     
     def __init__(self, source_dir: str, region: str = DEFAULT_REGION):
         self.source_dir = Path(source_dir)
@@ -39,27 +39,27 @@ class AgentPreparer:
     @property
     def agent_name(self) -> str:
         """
-        Extract agent name from the source directory (last folder name)
+        ソースディレクトリからエージェント名を抽出（最後のフォルダ名）
         
         Returns:
-            str: Name of the agent
+            str: エージェントの名前
         """
         return self.source_dir.name if self.source_dir.is_dir() else self.source_dir.stem
 
     def prepare(self) -> str:
         """
-        Prepare agent for deployment by creating deployment directory and IAM role
+        デプロイメントディレクトリとIAMロールを作成してエージェントをデプロイ用に準備
             
         Returns:
-            str: Command for agent configure
+            str: エージェント設定用コマンド
         """
-        # Create deployment directory
+        # デプロイメントディレクトリを作成
         deployment_dir = self.create_source_directory()
         
-        # Create IAM role
+        # IAMロールを作成
         role_info = self.create_agentcore_role()
 
-        # Build agentcore configure command
+        # agentcore configureコマンドを構築
         command = "\n".join([
             "",
             f"uv run agentcore configure --entrypoint {deployment_dir}/invoke.py \\",
@@ -73,22 +73,22 @@ class AgentPreparer:
 
     def create_source_directory(self) -> str:
         """
-        Create deployment directory by copying entire source directory
+        ソースディレクトリ全体をコピーしてデプロイメントディレクトリを作成
             
         Returns:
-            Path to the deployment directory
+            デプロイメントディレクトリへのパス
         """
         logger.info(f"Creating deployment directory from {self.source_dir}")
 
-        # Validate source directory exists
+        # ソースディレクトリの存在を検証
         if not self.source_dir.exists():
             raise FileNotFoundError(f"Source directory not found: {self.source_dir}")
 
-        # Create deployment directory
+        # デプロイメントディレクトリを作成
         target_dir = DEPLOYMENTS_DIR / self.agent_name
         target_dir.mkdir(parents=True, exist_ok=True)
 
-        # Copy Python files from source directory
+        # ソースディレクトリからPythonファイルをコピー
         logger.info(f"Copying Python files from {self.source_dir} to {target_dir}")
         for file_path in self.source_dir.glob("*.py"):
             dest_path = target_dir / file_path.name
@@ -100,20 +100,20 @@ class AgentPreparer:
 
     def create_agentcore_role(self) -> dict:
         """
-        Create IAM role with AgentCore permissions
-        Based on https://github.com/awslabs/amazon-bedrock-agentcore-samples
+        AgentCore権限を持つIAMロールを作成
+        https://github.com/awslabs/amazon-bedrock-agentcore-samples に基づく
                     
         Returns:
-            Role information including ARN
+            ARNを含むロール情報
         """
         role_name = f"AgentCoreRole-{self.agent_name}"
         logger.info(f"Creating IAM role: {role_name}")
         
-        # Get account ID
+        # アカウントIDを取得
         sts_client = boto3.client('sts', region_name=self.region)
         account_id = sts_client.get_caller_identity()['Account']
         
-        # Create trust policy
+        # 信頼ポリシーを作成
         trust_policy = {
             "Version": "2012-10-17",
             "Statement": [
@@ -135,7 +135,7 @@ class AgentPreparer:
             ]
         }
         
-        # Create execution policy
+        # 実行ポリシーを作成
         execution_policy = {
             "Version": "2012-10-17",
             "Statement": [
@@ -266,7 +266,7 @@ class AgentPreparer:
 
         if not role_exists:
             try:
-                # Create role
+                # ロールを作成
                 response = self.iam_client.create_role(
                     RoleName=role_name,
                     AssumeRolePolicyDocument=json.dumps(trust_policy),
@@ -276,9 +276,9 @@ class AgentPreparer:
                 
             except ClientError as e:
                 logger.error(f"Failed to create IAM role: {e}")
-                return {}  # Return empty dict to indicate failure
+                return {}  # 失敗を示すために空の辞書を返す
 
-            # Always ensure the execution policy is attached (for both new and existing roles)
+            # 実行ポリシーがアタッチされていることを常に確認（新規と既存のロール両方）
             try:
                 self.iam_client.put_role_policy(
                     RoleName=role_name,
@@ -290,7 +290,7 @@ class AgentPreparer:
                 
             except ClientError as e:
                 logger.error(f"Failed to attach execution policy: {e}")
-                return {}  # Return empty dict to indicate failure
+                return {}  # 失敗を示すために空の辞書を返す
 
         return {
             'agent_name': self.agent_name,
@@ -303,7 +303,7 @@ class AgentPreparer:
 @click.option('--source-dir', default="../01_code_interpreter/cost_estimator_agent", required=True, help='Source directory to copy')
 @click.option('--region', default=DEFAULT_REGION, help='AWS region')
 def prepare(source_dir: str, region: str):
-    """Prepare agent for deployment by copying source directory"""
+    """ソースディレクトリをコピーしてデプロイ用エージェントを準備"""
     console.print(f"[bold blue]Preparing agent from: {source_dir}[/bold blue]")
     
     preparer = AgentPreparer(source_dir, region)
@@ -318,13 +318,13 @@ def prepare(source_dir: str, region: str):
             configure_command = preparer.prepare()
             progress.stop()
         
-        # Success output with clear visual hierarchy
+        # 明確な視覚的階層で成功出力
         console.print("\n[bold green]✓ Agent preparation completed successfully![/bold green]")
         console.print(f"\n[bold]Agent Name:[/bold] {preparer.agent_name}")
         console.print(f"[bold]Deployment Directory:[/bold] {DEPLOYMENTS_DIR}")
         console.print(f"[bold]Region:[/bold] {region}")
         
-        # Next steps with clear visual separation
+        # 明確な視覚的分離で次のステップ
         console.print("\n[bold yellow]📋 Next Steps:[/bold yellow]")
         console.print("\n[bold]1. Configure the agent runtime:[/bold]")
         console.print(f"   [cyan]{configure_command}[/cyan]")
@@ -335,7 +335,7 @@ def prepare(source_dir: str, region: str):
         console.print("\n[bold]3. Test your agent:[/bold]")
         console.print("   [cyan]uv run agentcore invoke '{\"prompt\": \"I would like to connect t3.micro from my PC. How much does it cost?\"}'[/cyan]")
         
-        # Pro tip
+        # プロのコツ
         console.print("\n[dim]💡 Tip: You can copy and paste the commands above directly into your terminal.[/dim]")
         
     except Exception as e:

@@ -5,7 +5,7 @@ import boto3
 
 
 def clean_resources():
-    """Clean up all resources created by the identity setup"""
+    """アイデンティティセットアップで作成されたすべてのリソースをクリーンアップ"""
     config_file = Path("outbound_gateway.json")
 
     with config_file.open("r", encoding="utf-8") as f:

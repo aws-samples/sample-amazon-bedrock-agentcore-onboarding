@@ -1,14 +1,14 @@
 """
-Setup OAuth2 credential provider for AgentCore Identity using existing Cognito configuration.
+既存のCognito設定を使用してAgentCore IdentityのOAuth2認証プロバイダーをセットアップ
 
-This script creates an OAuth2 credential provider that integrates with the existing
-Cognito M2M OAuth setup from the gateway configuration. The provider enables
-AgentCore Identity to securely manage access tokens for authenticated API calls.
+このスクリプトは、ゲートウェイ設定からの既存のCognito M2M OAuth
+セットアップと統合されるOAuth2認証プロバイダーを作成します。このプロバイダーにより、
+AgentCore Identityは認証されたAPIコール用のアクセストークンを安全に管理できます。
 
-Prerequisites:
-- AWS credentials configured with bedrock-agentcore-control permissions
+前提条件:
+- bedrock-agentcore-control権限でAWS認証情報が設定済み
 
-Usage:
+使用方法:
     uv run python 03_identity/setup_inbound_authorizer.py
 """
 
@@ -27,7 +27,7 @@ from bedrock_agentcore_starter_toolkit.operations.gateway.client import GatewayC
 import yaml
 
 
-# Configure logging for clear debugging
+# 明確なデバッグのためのログ設定を構成
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 logger = logging.getLogger(__name__)
 
@@ -36,19 +36,19 @@ CONFIG_FILE = Path("inbound_authorizer.json")
 
 def setup_oauth2_credential_provider(provider_name: str = PROVIDER_NAME, force: bool = False) -> dict:
     """
-    Setup OAuth2 credential provider for AgentCore Identity.
+    AgentCore Identity用のOAuth2認証プロバイダーをセットアップ。
     
-    This function:
-    1. Create Cognito user pool and app client
-    2. Creates OAuth2 credential provider using Cognito discovery URL
-    3. Saves configuration to inbound_authorizer.json
+    この関数は以下を実行：
+    1. Cognitoユーザープールとアプリクライアントを作成
+    2. CognitoディスカバリーURLを使用してOAuth2認証プロバイダーを作成
+    3. 設定をinbound_authorizer.jsonに保存
     
     Args:
-        provider_name: Name for the credential provider
-        force: Whether to force recreation of resources
+        provider_name: 認証プロバイダーの名前
+        force: リソースの再作成を強制するかどうか
 
     Returns:
-        dict: Configuration
+        dict: 設定
     """
 
     config = load_config()
@@ -59,7 +59,7 @@ def setup_oauth2_credential_provider(provider_name: str = PROVIDER_NAME, force: 
 
     identity_client = boto3.client('bedrock-agentcore-control', region_name=region)
 
-    # If everything is complete and not forcing, show summary and exit
+    # すべてが完了しており強制しない場合、要約を表示して終了
     if config and has_cognito and has_provider and not force:
         logger.info("All components already configured (use --force to recreate)")
         return config
@@ -79,7 +79,7 @@ def setup_oauth2_credential_provider(provider_name: str = PROVIDER_NAME, force: 
     if not has_cognito:
         logger.info("Creating Cognito OAuth authorizer...")
         gateway_client = GatewayClient(region_name=region)
-        # Use simple interface for creating OAuth authorizer with Cognito from Gateway Client
+        # Gateway ClientからCognitoでOAuthオーソライザーを作成するためのシンプルなインターフェイスを使用
         cognito_result = gateway_client.create_oauth_authorizer_with_cognito("InboundAuthorizerForCostEstimatorAgent")
         user_pool_id = cognito_result['client_info']['user_pool_id']
         discovery_url = f"https://cognito-idp.{region}.amazonaws.com/{user_pool_id}/.well-known/openid-configuration"
@@ -98,7 +98,7 @@ def setup_oauth2_credential_provider(provider_name: str = PROVIDER_NAME, force: 
     provider_config = {}
     if not has_provider:
         logger.info("Creating Identity Provider ...")
-        # Create new credential provider configuration
+        # 新しい認証プロバイダー設定を作成
         # https://docs.aws.amazon.com/bedrock-agentcore-control/latest/APIReference/API_CustomOauth2ProviderConfigInput.html
         # https://docs.aws.amazon.com/bedrock-agentcore-control/latest/APIReference/API_Oauth2Discovery.html
         wait_for_oidc_endpoint(discovery_url)
@@ -112,7 +112,7 @@ def setup_oauth2_credential_provider(provider_name: str = PROVIDER_NAME, force: 
             }
         }
 
-        # API Reference: https://docs.aws.amazon.com/bedrock-agentcore-control/latest/APIReference/API_CreateOauth2CredentialProvider.html
+        # APIリファレンス: https://docs.aws.amazon.com/bedrock-agentcore-control/latest/APIReference/API_CreateOauth2CredentialProvider.html
         response = identity_client.create_oauth2_credential_provider(
             name=provider_name,
             credentialProviderVendor='CustomOauth2',
@@ -139,7 +139,7 @@ def load_config() -> dict:
 
 
 def save_config(updates: Optional[dict]=None, delete_key: str=""):
-    """Update configuration file with new data"""
+    """新しいデータで設定ファイルを更新"""
     config = load_config()
     
     if updates is not None:
@@ -152,7 +152,7 @@ def save_config(updates: Optional[dict]=None, delete_key: str=""):
 
 
 def cleanup_cognito_resources(cognito_config):
-    """Clean up Cognito resources explicitly"""
+    """Cognitoリソースを明示的にクリーンアップ"""
     if not cognito_config.get('user_pool_id'):    
         try:
             cognito_client = boto3.client('cognito-idp')
@@ -181,10 +181,10 @@ def cleanup_cognito_resources(cognito_config):
 
 
 def wait_for_oidc_endpoint(oidc_url, max_wait=600, interval=30):
-    """Wait for OIDC discovery endpoint to become available
+    """OIDCディスカバリーエンドポイントが利用可能になるまで待機
     
-    Based on real-world testing, OIDC endpoints can take 5+ minutes to become available
-    due to DNS propagation and service initialization delays.
+    実世界のテストに基づくと、DNS伝播とサービス初期化の遅延のため、
+    OIDCエンドポイントが利用可能になるまでに5分以上かかる可能性があります。
     """
     start_time = time.time()
     attempt = 1
@@ -196,13 +196,13 @@ def wait_for_oidc_endpoint(oidc_url, max_wait=600, interval=30):
         response = requests.get(oidc_url, timeout=10)
         logger.info(f"⏳ Attempt {attempt}: HTTP {response.status_code}")
         
-        # Raise exception for HTTP error status codes (4xx, 5xx)
+        # HTTPエラーステータスコード（4xx、5xx）に対して例外を発生
         response.raise_for_status()
         
         if response.status_code == 200:
             elapsed = time.time() - start_time
             logger.info(f"✅ OIDC endpoint available after {elapsed:.1f}s")
-            # Verify it's actually valid JSON
+            # 実際に有効なJSONかどうかを検証
             try:
                 json_data = response.json()
                 if 'issuer' in json_data:

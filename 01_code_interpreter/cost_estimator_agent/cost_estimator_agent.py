@@ -1,16 +1,16 @@
 """
-AWS Cost Estimation Agent using Amazon Bedrock AgentCore Code Interpreter
+Amazon Bedrock AgentCore Code Interpreter を使用したAWSコスト見積もりエージェント
 
-This agent demonstrates how to:
-1. Use AWS Pricing MCP Server to retrieve pricing data
-2. Use AgentCore Code Interpreter for secure calculations
-3. Provide comprehensive cost estimates for AWS architectures
+このエージェントは以下の方法を実演します：
+1. AWS Pricing MCP Server を使用して料金データを取得する
+2. AgentCore Code Interpreter を使用して安全な計算を実行する
+3. AWSアーキテクチャの包括的なコスト見積もりを提供する
 
-Key Features:
-- Secure code execution in AgentCore sandbox
-- Real-time AWS pricing data
-- Comprehensive logging and error handling
-- Progressive complexity building
+主要機能：
+- AgentCoreサンドボックスでの安全なコード実行
+- リアルタイムAWS料金データ
+- 包括的なログ記録とエラーハンドリング
+- 段階的な複雑性の構築
 """
 
 import logging
@@ -30,14 +30,14 @@ from cost_estimator_agent.config import (
     LOG_FORMAT
 )
 
-# Configure comprehensive logging for debugging and monitoring
+# デバッグと監視のための包括的なログ設定を構成
 logging.basicConfig(
-    level=logging.ERROR,  # Set to ERROR by default, can be changed to DEBUG for more details
+    level=logging.ERROR,  # デフォルトでERRORに設定、詳細情報が必要な場合はDEBUGに変更可能
     format=LOG_FORMAT,
     handlers=[logging.StreamHandler()]
 )
 
-# Enable Strands debug logging for detailed agent behavior
+# エージェントの詳細な動作を把握するためのStrandsデバッグログを有効化
 logging.getLogger("strands").setLevel(logging.ERROR)
 
 logger = logging.getLogger(__name__)
@@ -45,12 +45,12 @@ logger = logging.getLogger(__name__)
 
 class AWSCostEstimatorAgent:
     """
-    AWS Cost Estimation Agent using AgentCore Code Interpreter
+    AgentCore Code Interpreter を使用したAWSコスト見積もりエージェント
     
-    This agent combines:
-    - MCP pricing tools (automatically available) for real-time pricing data
-    - AgentCore Code Interpreter for secure calculations
-    - Strands Agents framework for clean implementation
+    このエージェントは以下を組み合わせます：
+    - リアルタイム料金データのためのMCP料金ツール（自動で利用可能）
+    - 安全な計算のためのAgentCore Code Interpreter
+    - きれいな実装のためのStrandsエージェントフレームワーク
     """
     
     def __init__(self, region: str = ""):
@@ -62,14 +62,14 @@ class AWSCostEstimatorAgent:
         """
         self.region = region
         if not self.region:
-            # Use default region from boto3 session if not specified
+            # 指定されていない場合はboto3セッションからデフォルトリージョンを使用
             self.region = boto3.Session().region_name
         self.code_interpreter = None
         
         logger.info(f"Initializing AWS Cost Estimator Agent in region: {region}")
         
     def _setup_code_interpreter(self) -> None:
-        """Setup AgentCore Code Interpreter for secure calculations"""
+        """安全な計算のためのAgentCore Code Interpreterをセットアップ"""
         try:
             logger.info("Setting up AgentCore Code Interpreter...")
             self.code_interpreter = CodeInterpreter(self.region)
@@ -77,7 +77,7 @@ class AWSCostEstimatorAgent:
             logger.info("✅ AgentCore Code Interpreter session started successfully")
         except Exception as e:
             logger.error(f"❌ Failed to setup Code Interpreter: {e}")
-            return  # Handle the error instead of re-raising
+            return  # 再発生させる代わりにエラーを処理
     
     def _get_aws_credentials(self) -> dict:
         """
@@ -89,19 +89,19 @@ class AWSCostEstimatorAgent:
         try:
             logger.info("Getting current AWS credentials...")
             
-            # Create session to get current credentials
+            # 現在の認証情報を取得するためのセッションを作成
             session = boto3.Session()
             credentials = session.get_credentials()
             
             if credentials is None:
                 raise Exception("No AWS credentials found")
             
-            # Verify credentials work by getting caller identity
+            # 呼び出し元のアイデンティティを取得して認証情報が機能することを確認
             sts_client = boto3.client('sts', region_name=self.region)
             identity = sts_client.get_caller_identity()
             logger.info(f"Using AWS identity: {identity.get('Arn', 'Unknown')}")
             
-            # Get frozen credentials to access them
+            # アクセスするためにフリーズした認証情報を取得
             frozen_creds = credentials.get_frozen_credentials()
             
             credential_dict = {
@@ -110,7 +110,7 @@ class AWSCostEstimatorAgent:
                 "AWS_REGION": self.region
             }
             
-            # Add session token if available (EC2 instance role provides this)
+            # 利用可能な場合はセッショントークンを追加（EC2インスタンスロールがこれを提供）
             if frozen_creds.token:
                 credential_dict["AWS_SESSION_TOKEN"] = frozen_creds.token
                 logger.info("✅ Using AWS credentials with session token (likely from EC2 instance role)")
@@ -121,20 +121,20 @@ class AWSCostEstimatorAgent:
             
         except Exception as e:
             logger.error(f"❌ Failed to get AWS credentials: {e}")
-            return {}  # Return empty dict as fallback
+            return {}  # フォールバックとして空の辞書を返す
 
     def _setup_aws_pricing_client(self) -> MCPClient:
-        """Setup AWS Pricing MCP Client with current AWS credentials"""
+        """現在のAWS認証情報でAWS Pricing MCPクライアントをセットアップ"""
         try:
             logger.info("Setting up AWS Pricing MCP Client...")
             
-            # Get current credentials (including session token if available)
+            # 現在の認証情報を取得（セッショントークンが利用可能な場合は含む）
             aws_credentials = self._get_aws_credentials()
             
-            # Prepare environment variables for MCP client
+            # MCPクライアント用の環境変数を準備
             env_vars = {
                 "FASTMCP_LOG_LEVEL": "ERROR",
-                **aws_credentials  # Include all AWS credentials
+                **aws_credentials  # すべてのAWS認証情報を含む
             }
             
             aws_pricing_client = MCPClient(
@@ -148,20 +148,20 @@ class AWSCostEstimatorAgent:
             return aws_pricing_client
         except Exception as e:
             logger.error(f"❌ Failed to setup AWS Pricing MCP Client: {e}")
-            return None  # Return None as fallback
+            return None  # フォールバックとしてNoneを返す
     
     
     @tool
     def execute_cost_calculation(self, calculation_code: str, description: str = "") -> str:
         """
-        Execute cost calculations using AgentCore Code Interpreter
+        AgentCore Code Interpreterを使用してコスト計算を実行
         
         Args:
-            calculation_code: Python code for cost calculations
-            description: Description of what the calculation does
+            calculation_code: コスト計算用のPythonコード
+            description: 計算が何をするかの説明
             
         Returns:
-            Calculation results as string
+            文字列としての計算結果
         """
         if not self.code_interpreter:
             return "❌ Code Interpreter not initialized"
@@ -170,13 +170,13 @@ class AWSCostEstimatorAgent:
             logger.info(f"🧮 Executing calculation: {description}")
             logger.debug(f"Code to execute:\n{calculation_code}")
             
-            # Execute code in secure AgentCore sandbox
+            # 安全なAgentCoreサンドボックスでコードを実行
             response = self.code_interpreter.invoke("executeCode", {
                 "language": "python",
                 "code": calculation_code
             })
             
-            # Extract results from response stream
+            # レスポンスストリームから結果を抽出
             results = []
             for event in response.get("stream", []):
                 if "result" in event:
@@ -198,27 +198,27 @@ class AWSCostEstimatorAgent:
     @contextmanager
     def _estimation_agent(self) -> Generator[Agent, None, None]:
         """
-        Context manager for cost estimation components
+        コスト見積もりコンポーネント用のコンテキストマネージャー
         
         Yields:
-            Agent with all tools configured and resources properly managed
+            すべてのツールが設定され、リソースが適切に管理されたエージェント
             
         Ensures:
-            Proper cleanup of Code Interpreter and MCP client resources
+            Code InterpreterとMCPクライアントリソースの適切なクリーンアップ
         """        
         try:
             logger.info("🚀 Initializing AWS Cost Estimation Agent...")
             
-            # Setup components in order
+            # 順序立ててコンポーネントをセットアップ
             self._setup_code_interpreter()
             aws_pricing_client = self._setup_aws_pricing_client()
             
-            # Create agent with persistent MCP context
+            # 永続的なMCPコンテキストを持つエージェントを作成
             with aws_pricing_client:
                 pricing_tools = aws_pricing_client.list_tools_sync()
                 logger.info(f"Found {len(pricing_tools)} AWS pricing tools")
                 
-                # Create agent with both execute_cost_calculation and MCP pricing tools
+                # execute_cost_calculationとMCP料金ツールの両方を持つエージェントを作成
                 all_tools = [self.execute_cost_calculation] + pricing_tools
                 agent = Agent(
                     model=DEFAULT_MODEL,
@@ -232,18 +232,18 @@ class AWSCostEstimatorAgent:
             logger.exception(f"❌ Component setup failed: {e}")
             raise
         finally:
-            # Ensure cleanup happens regardless of success/failure
+            # 成功・失敗に関係なくクリーンアップが実行されることを保証
             self.cleanup()
 
     def estimate_costs(self, architecture_description: str) -> str:
         """
-        Estimate costs for a given architecture description
+        与えられたアーキテクチャ説明に対してコストを見積もり
         
         Args:
-            architecture_description: Description of the system to estimate
+            architecture_description: 見積もり対象システムの説明
             
         Returns:
-            Cost estimation results as concatenated string
+            連結された文字列としてのコスト見積もり結果
         """
         logger.info("📊 Starting cost estimation...")
         logger.info(f"Architecture: {architecture_description}")
@@ -259,7 +259,7 @@ class AWSCostEstimatorAgent:
                 logger.info("✅ Cost estimation completed")
 
                 if result.message and result.message.get("content"):
-                    # Extract text from all ContentBlocks and concatenate
+                    # すべてのContentBlockからテキストを抽出して連結
                     text_parts = []
                     for content_block in result.message["content"]:
                         if isinstance(content_block, dict) and "text" in content_block:
@@ -275,22 +275,22 @@ class AWSCostEstimatorAgent:
 
     async def estimate_costs_stream(self, architecture_description: str) -> AsyncGenerator[dict, None]:
         """
-        Estimate costs for a given architecture description with streaming response
+        ストリーミングレスポンスで与えられたアーキテクチャ説明に対してコストを見積もり
         
-        Implements proper delta-based streaming following Amazon Bedrock best practices.
-        This addresses the common issue where Strands stream_async() may send overlapping
-        content chunks instead of proper deltas.
+        Amazon Bedrockのベストプラクティスに従った適切なデルタベースのストリーミングを実装します。
+        これは、Strands stream_async()が適切なデルタの代わりに重複するコンテンツチャンクを
+        送信する可能性があるという一般的な問題を解決します。
         
         Args:
-            architecture_description: Description of the system to estimate
+            architecture_description: 見積もり対象システムの説明
             
         Yields:
-            Streaming events with true delta content (only new text, no duplicates)
+            真のデルタコンテンツを持つストリーミングイベント（新しいテキストのみ、重複なし）
             
-        Example usage:
+        使用例:
             async for event in agent.estimate_costs_stream(description):
                 if "data" in event:
-                    print(event["data"], end="", flush=True)  # Direct printing, no accumulation needed
+                    print(event["data"], end="", flush=True)  # 直接印刷、蓄積不要
         """
         logger.info("📊 Starting streaming cost estimation...")
         logger.info(f"Architecture: {architecture_description}")
@@ -304,8 +304,8 @@ class AWSCostEstimatorAgent:
                 
                 logger.info("🔄 Streaming cost estimation response...")
                 
-                # Implement proper delta handling to prevent duplicates
-                # This follows Amazon Bedrock ContentBlockDeltaEvent pattern
+                # 重複を防ぐための適切なデルタハンドリングを実装
+                # これはAmazon Bedrock ContentBlockDeltaEventパターンに従う
                 previous_output = ""
                 
                 agent_stream = agent.stream_async(prompt, callback_handler=null_callback_handler)
@@ -314,33 +314,33 @@ class AWSCostEstimatorAgent:
                     if "data" in event:
                         current_chunk = str(event["data"])
                         
-                        # Handle delta calculation following Bedrock best practices
+                        # Bedrockのベストプラクティスに従ってデルタ計算を処理
                         if current_chunk.startswith(previous_output):
-                            # This is an incremental update - extract only the new part
+                            # これは増分更新 - 新しい部分のみを抽出
                             delta_content = current_chunk[len(previous_output):]
-                            if delta_content:  # Only yield if there's actually new content
+                            if delta_content:  # 実際に新しいコンテンツがある場合のみyield
                                 previous_output = current_chunk
                                 yield {"data": delta_content}
                         else:
-                            # This is a completely new chunk or reset - yield as-is
+                            # これは完全に新しいチャンクまたはリセット - そのままyield
                             previous_output = current_chunk
                             yield {"data": current_chunk}
                     else:
-                        # Pass through non-data events (errors, metadata, etc.)
+                        # データ以外のイベント（エラー、メタデータなど）をパススルー
                         yield event
                 
                 logger.info("✅ Streaming cost estimation completed")
 
         except Exception as e:
             logger.exception(f"❌ Streaming cost estimation failed: {e}")
-            # Yield error event in streaming format
+            # ストリーミング形式でエラーイベントをyield
             yield {
                 "error": True,
                 "data": f"❌ Streaming cost estimation failed: {e}\n\nStacktrace:\n{traceback.format_exc()}"
             }
 
     def cleanup(self) -> None:
-        """Clean up resources"""
+        """リソースをクリーンアップ"""
         logger.info("🧹 Cleaning up resources...")
         
         if self.code_interpreter:

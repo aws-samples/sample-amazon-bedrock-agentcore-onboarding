@@ -1,12 +1,12 @@
 """
-Configuration for AWS Cost Estimation Agent
+AWS コスト見積もりエージェント設定
 
-This module contains all prompts and configuration values,
-separated from the main logic to maintain clean code structure
-and pass linting tools.
+このモジュールには、すべてのプロンプトと設定値が含まれており、
+メインロジックから分離してきれいなコード構造を維持し、
+リンティングツールを通すために作られています。
 """
 
-# System prompt for the AWS Cost Estimation Agent
+# AWS コスト見積もりエージェントのシステムプロンプト
 SYSTEM_PROMPT = """You are an AWS Cost Estimation Expert Agent.
 
 Your role is to analyze system architecture descriptions and provide accurate AWS cost estimates.
@@ -48,17 +48,17 @@ OUTPUT FORMAT:
 - Discussion points
 """
 
-# Cost estimation prompt template
+# コスト見積もりプロンプトテンプレート
 COST_ESTIMATION_PROMPT = """
 Please analyze this architecture and provide an AWS cost estimate:
 {architecture_description}
 """
 
-# Model configuration
+# モデル設定
 DEFAULT_MODEL = "us.anthropic.claude-3-7-sonnet-20250219-v1:0" 
 
-# AWS regions
+# AWS リージョン
 DEFAULT_PROFILE = "default"
 
-# Logging configuration
+# ログ設定
 LOG_FORMAT = "%(asctime)s | %(levelname)s | %(name)s | %(message)s"

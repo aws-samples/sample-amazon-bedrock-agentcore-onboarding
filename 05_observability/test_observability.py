@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """
-AgentCore Observability Test Script
+AgentCore可観測性テストスクリプト
 
-This script demonstrates AgentCore observability capabilities by:
-1. Reading agent ARN from .bedrock_agentcore.yaml
-2. Using meaningful session IDs (user_id + datetime format)
-3. Testing multiple invocations in the same session
-4. Intentionally causing errors to test error detection
-5. Recording observable logs in CloudWatch for monitoring
+このスクリプトは以下によってAgentCoreの可観測性機能を実演します：
+1. .bedrock_agentcore.yamlからエージェントARNを読み取り
+2. 意味のあるセッションIDを使用（user_id + datetimeフォーマット）
+3. 同じセッションでの複数呼び出しをテスト
+4. 意図的にエラーを発生させてエラー検知をテスト
+5. 監視用に観測可能なログをCloudWatchに記録
 
-Usage:
+使用方法:
     python test_observability.py
 """
 
@@ -21,7 +21,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any
 
-# Configure logging
+# ログ設定を構成
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s'

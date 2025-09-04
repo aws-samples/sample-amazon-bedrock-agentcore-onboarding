@@ -1,9 +1,9 @@
 """
-Test the AgentCore Identity by invoking cost_estimator_agent_with_identity
+cost_estimator_agent_with_identityを呼び出してAgentCore Identityをテスト
 
-This script demonstrates how to:
-1. Obtain an OAuth token from AgentCore Identity
-2. Call the Runtime with obtained token
+このスクリプトは以下の方法を実演します：
+1. AgentCore IdentityからOAuthトークンを取得する
+2. 取得したトークンでランタイムを呼び出す
 """
 
 import json
@@ -18,7 +18,7 @@ from strands import Agent
 from strands import tool
 from bedrock_agentcore.identity.auth import requires_access_token
 
-# Configure logging with more verbose output
+# より詳細な出力でログを設定
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -30,7 +30,7 @@ CONFIG_FILE = Path("inbound_authorizer.json")
 OAUTH_PROVIDER = ""
 OAUTH_SCOPE = ""
 RUNTIME_URL = ""
-BASE64_BLOCK_SIZE = 4 # Base64 encoding processes data in 4-character blocks
+BASE64_BLOCK_SIZE = 4 # Base64エンコーディングは4文字ブロックでデータを処理
 with CONFIG_FILE.open('r') as f:
     config = json.load(f)
     OAUTH_PROVIDER = config["provider"]["name"]
@@ -40,20 +40,20 @@ with CONFIG_FILE.open('r') as f:
 
 def log_jwt_token_details(access_token: str) -> None:
     """
-    Log JWT token contents for debugging purposes using Base64 decoding.
+    Base64デコーディングを使用してデバッグ目的でJWTトークン内容をログ出力。
     
     Args:
-        access_token: JWT access token
+        access_token: JWTアクセストークン
     
     Note:
-        JWT tokens consist of three parts (header, payload, signature).
-        For security reasons, the signature part is not decoded.
+        JWTトークンは3つの部分（ヘッダー、ペイロード、署名）で構成されます。
+        セキュリティ上の理由で、署名部分はデコードされません。
     """
     # Parse and log JWT token parts for debugging
     token_parts = access_token.split(".")
-    for i, part in enumerate(token_parts[:2]):  # Only decode header and payload, not signature
+    for i, part in enumerate(token_parts[:2]):  # 署名ではなく、ヘッダーとペイロードのみをデコード
         try:
-            # Add padding if needed (JWT Base64 encoding may omit trailing '=' characters)
+            # 必要に応じてパディングを追加（JWT Base64エンコーディングは末尾の'='文字を省略する可能性がある）
             num_padding_chars = BASE64_BLOCK_SIZE - (len(part) % BASE64_BLOCK_SIZE)
             if num_padding_chars != BASE64_BLOCK_SIZE:
                 part_for_decode = part + '=' * num_padding_chars
@@ -66,7 +66,7 @@ def log_jwt_token_details(access_token: str) -> None:
             logger.error(f"\t❌ Failed to decode token part {i}: {e}")
 
 
-# Internal function with authentication decorator
+# 認証デコレーター付き内部関数
 @requires_access_token(
     provider_name=OAUTH_PROVIDER,
     scopes=[OAUTH_SCOPE],
@@ -74,12 +74,12 @@ def log_jwt_token_details(access_token: str) -> None:
     force_authentication=False
 )
 async def _cost_estimator_with_auth(architecture_description: str, access_token: str = None) -> str:
-    """Internal function that handles the actual API call with authentication"""
+    """認証を伴う実際のAPI呼び出しを処理する内部関数"""
     session_id = f"runtime-with-identity-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')}"
 
     if access_token:
         logger.info("✅ Successfully load the access token from AgentCore Identity!")
-        # Parse and log JWT token parts for debugging
+        # デバッグ用にJWTトークン部分を解析してログ出力
         log_jwt_token_details(access_token)
 
     headers = {
@@ -99,29 +99,29 @@ async def _cost_estimator_with_auth(architecture_description: str, access_token:
     return response.text
 
 
-# Tool function exposed to LLM (without access_token parameter)
+# LLMに公開されるツール関数（access_tokenパラメーターなし）
 @tool(
     name="cost_estimator_tool",
     description="Estimate cost of AWS from architecture description"
 )
 async def cost_estimator_tool(architecture_description: str) -> str:
     """
-    Estimate AWS costs based on architecture description.
+    アーキテクチャ説明に基づいてAWSコストを見積もり。
 
     Args:
-        architecture_description: Description of the AWS architecture to estimate costs for
+        architecture_description: コスト見積もり対象のAWSアーキテクチャの説明
 
     Returns:
-        Cost estimation result as a string
+        文字列としてのコスト見積もり結果
     """
-    # Call the internal function with authentication
-    # We call internal function to conceal access token argument from agent
+    # 認証付きで内部関数を呼び出し
+    # エージェントからアクセストークン引数を隠すために内部関数を呼び出し
     return await _cost_estimator_with_auth(architecture_description)
 
 
 async def main():
-    """Main test function"""
-    # Parse command line arguments
+    """メインテスト関数"""
+    # コマンドライン引数を解析
     parser = argparse.ArgumentParser(description='Test AgentCore Gateway with different methods')
     parser.add_argument(
         '--architecture',

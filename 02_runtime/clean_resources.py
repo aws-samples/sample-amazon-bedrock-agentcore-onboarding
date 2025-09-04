@@ -4,6 +4,7 @@ import os
 
 
 def clean_resources():
+    """AgentCoreランタイムとECRリポジトリを削除してリソースをクリーンアップ"""
     with open(".bedrock_agentcore.yaml", "r", encoding="utf-8") as f:
         config = yaml.safe_load(f) or {}
 

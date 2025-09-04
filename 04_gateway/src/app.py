@@ -1,8 +1,8 @@
 """
-Simple Lambda function for AgentCore Gateway that converts markdown to HTML and sends via SES
+MarkdownをHTMLに変換してSES経由で送信するAgentCore Gateway用のシンプルなLambda関数
 
-This Lambda function takes markdown text and an email address, converts the markdown
-to HTML, and sends it as an HTML email using Amazon SES.
+このLambda関数は、Markdownテキストとメールアドレスを受け取り、Markdown
+をHTMLに変換し、Amazon SESを使用してHTMLメールとして送信します。
 """
 
 import json
@@ -12,18 +12,18 @@ import boto3
 import markdown
 from botocore.exceptions import ClientError
 
-# Configure logging
+# ログ設定を構成
 logger = logging.getLogger()
 logger.setLevel(os.environ.get('LOG_LEVEL', 'INFO'))
 
 
 def lambda_handler(event, context):
     """
-    Handle markdown_to_email tool invocation from Gateway
+    Gatewayからのmarkdown_to_emailツール呼び出しを処理
     
     Args:
-        event: Contains the markdown text and email address
-        context: Lambda context with Gateway metadata. Its `client_context` should contain
+        event: Markdownテキストとメールアドレスを含む
+        context: Gatewayメタデータ付きのLambdaコンテキスト。`client_context`は以下を含む:
         ClientContext(custom={
             'bedrockAgentCoreGatewayId': 'Y02ERAYBHB'
             'bedrockAgentCoreTargetId': 'RQHDN3J002'
@@ -33,18 +33,18 @@ def lambda_handler(event, context):
         },env=None,client=None]
 
     Returns:
-        Success or error message for the email sending operation
+        メール送信操作の成功またはエラーメッセージ
     """
     try:
-        # Log the incoming request
+        # 受信リクエストをログ出力
         logger.info(f"Received event: {json.dumps(event)}")
         
-        # Extract tool name from context
+        # コンテキストからツール名を抽出
         if context and context.client_context:
             logger.info(f"Context: {context.client_context}")
             tool_name = context.client_context.custom.get('bedrockAgentCoreToolName', '')
             
-            # Remove any prefix added by Gateway (format: targetName___toolName)
+            # Gatewayによって追加されたプレフィックスを削除（フォーマット: targetName___toolName）
             if "___" in tool_name:
                 tool_name = tool_name.split("___")[-1]
         else:

@@ -1,5 +1,5 @@
 """
-Create AgentCore Gateway with Lambda target using AgentCore SDK
+AgentCore SDKを使用してLambdaターゲットでAgentCore Gatewayを作成
 """
 
 import json
@@ -12,7 +12,7 @@ from rich.console import Console
 from rich.panel import Panel
 from bedrock_agentcore_starter_toolkit.operations.gateway.client import GatewayClient
 
-# Configure logging
+# ログ設定を構成
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 logger = logging.getLogger(__name__)
 
@@ -23,19 +23,19 @@ CONFIG_FILE = Path("outbound_gateway.json")
 
 def setup_gateway(provider_name: str = PROVIDER_NAME, force: bool = False) -> dict:
     """
-    Setup Gateway with GitHub OAuth2 credential provider.
+    GitHub OAuth2認証プロバイダーでGatewayをセットアップ。
     
-    This function:
-    1. Creates Gateway with Inbound Authorizer from 03_identity
-    2. Attach AWS Lambda to Gateway as Outbound target
-    3. Saves configuration to outbound_gateway.json
+    この関数は以下を実行：
+    1. 03_identityからのInbound AuthorizerでGatewayを作成
+    2. アウトバウンドターゲットとしてAWS LambdaをGatewayにアタッチ
+    3. 設定をoutbound_gateway.jsonに保存
 
     Args:
-        provider_name: Name for the credential provider
-        force: Whether to force recreation of resources
+        provider_name: 認証プロバイダーの名前
+        force: リソースの再作成を強制するかどうか
 
     Returns:
-        dict: Configuration
+        dict: 設定
     """
 
     config = load_config()
@@ -47,7 +47,7 @@ def setup_gateway(provider_name: str = PROVIDER_NAME, force: bool = False) -> di
     control_client = boto3.client('bedrock-agentcore-control', region_name=region)
     gateway_client = GatewayClient(region_name=region)
     
-    # If everything is complete and not forcing, show summary and exit
+    # すべてが完了しており強制しない場合、要約を表示して終了
     if config and has_provider and has_gateway and not force:
         logger.info("All components already configured (use --force to recreate)")
         return config

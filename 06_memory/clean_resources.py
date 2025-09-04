@@ -3,6 +3,7 @@ from bedrock_agentcore.memory import MemoryClient
 
 
 def clean_resources():
+    """メモリリソースをクリーンアップ"""
     region = boto3.Session().region_name
     client = MemoryClient(region_name=region)
     for memory in client.list_memories():

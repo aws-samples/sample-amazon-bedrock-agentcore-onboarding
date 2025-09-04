@@ -5,7 +5,7 @@ import boto3
 
 
 def clean_resources():
-    """Clean up all resources created by the identity setup"""
+    """アイデンティティセットアップで作成されたすべてのリソースをクリーンアップ"""
     config_file = Path("inbound_authorizer.json")
 
     with config_file.open("r", encoding="utf-8") as f:
@@ -13,19 +13,19 @@ def clean_resources():
 
     region = boto3.Session().region_name
     
-    # Clean up AgentCore OAuth2 credential provider
+    # AgentCore OAuth2認証プロバイダーをクリーンアップ
     client = boto3.client("bedrock-agentcore-control", region_name=region)
     provider_name = config["provider"]["name"]
     print(f"Deleting OAuth2 credential provider: {provider_name}")
     client.delete_oauth2_credential_provider(name=provider_name)
     print(f"OAuth2 credential provider {provider_name} deleted successfully")
 
-    # Clean up Cognito resources
+    # Cognitoリソースをクリーンアップ
     cognito_client = boto3.client("cognito-idp", region_name=region)
     user_pool_id = config["cognito"]["user_pool_id"]
     client_id = config["cognito"]["client_id"]
 
-    # Delete user pool client
+    # ユーザープールクライアントを削除
     print(f"Deleting user pool client: {client_id}")
     cognito_client.delete_user_pool_client(
         UserPoolId=user_pool_id,
@@ -43,7 +43,7 @@ def clean_resources():
     else:
         print("No domain found for user pool")
 
-    # Disable deletion protection and delete user pool
+    # 削除保護を無効化してユーザープールを削除
     print(f"Disabling deletion protection for user pool: {user_pool_id}")
     cognito_client.update_user_pool(
         UserPoolId=user_pool_id,

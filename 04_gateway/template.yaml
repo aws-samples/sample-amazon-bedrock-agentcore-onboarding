@@ -22,7 +22,6 @@ Resources:
       CodeUri: src/
       Handler: app.lambda_handler
       Description: Lambda function that converts markdown to HTML and sends via SES
-      ReservedConcurrentExecutions: 5  # Limit concurrent executions for cost control
       Environment:
         Variables:
           SES_SENDER_EMAIL: !Ref SenderEmail

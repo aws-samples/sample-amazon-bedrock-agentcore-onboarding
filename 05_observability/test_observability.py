@@ -20,6 +20,7 @@ import yaml
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any
+from botocore.config import Config
 
 # Configure logging
 logging.basicConfig(
@@ -38,7 +39,11 @@ class ObservabilityTester:
         if not self.region:
             # Use default region from boto3 session if not specified
             self.region = boto3.Session().region_name
-        self.client = boto3.client('bedrock-agentcore', region_name=self.region)
+        config = Config(
+            region_name=self.region
+            read_timeout=600 
+        )
+        self.client = boto3.client('bedrock-agentcore', config=config)
     
     def generate_session_id(self, user_id: str) -> str:
         """Generate meaningful session ID with minimum length requirement"""

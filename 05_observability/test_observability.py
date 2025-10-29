@@ -40,7 +40,7 @@ class ObservabilityTester:
             # Use default region from boto3 session if not specified
             self.region = boto3.Session().region_name
         config = Config(
-            region_name=self.region
+            region_name=self.region,
             read_timeout=600 
         )
         self.client = boto3.client('bedrock-agentcore', config=config)

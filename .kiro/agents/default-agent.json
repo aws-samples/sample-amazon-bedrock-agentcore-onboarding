@@ -48,8 +48,7 @@
 	"*"
   ],
   "allowedTools": [
-    "read",
-    "write"
+    "read"
   ],
   "toolsSettings": {
     "execute_bash": {

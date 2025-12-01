@@ -61,6 +61,12 @@ sample-amazon-bedrock-agentcore-onboarding/
 │   ├── test_memory.py            # メモリ拡張エージェント実装
 │   └── _implementation.md        # 技術的実装詳細
 │
+├── a1_custom/                    # 📚 付録: カスタムエージェントの開発
+│   ├── README.md                 # 📖 カスタムエージェント開発ガイド
+│   ├── weather_agent/            # 例: 天気エージェント実装
+│   ├── prepare_agent.py          # デプロイ準備用
+│   └── test_agentcore_endpoint.py # テスト用
+│
 ├── pyproject.toml                # プロジェクト依存関係と設定
 ├── uv.lock                       # 依存関係ロックファイル
 └── README.md                     # この概要ドキュメント
@@ -99,6 +105,13 @@ sample-amazon-bedrock-agentcore-onboarding/
    - 短期および長期メモリ機能を実装
    - パーソナライズされた適応型エージェント体験を作成
    - **所要時間**: ~45分 | **難易度**: 上級
+
+### 📚 付録
+
+**[A1. カスタムエージェント](a1_custom/README.md)** - 独自のカスタムエージェントを構築
+   - 特定のユースケースに合わせたエージェントの作成方法を学習
+   - サンプル実装を提供（天気エージェント）
+   - **所要時間**: ~20分 | **難易度**: 中級
 
 ### 🎯 フォーカス学習（ユースケース別）
 

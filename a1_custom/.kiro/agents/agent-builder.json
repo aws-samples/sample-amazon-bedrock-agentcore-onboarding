@@ -1,0 +1,73 @@
+{
+  "name": "agent-builder",
+  "description": "Workshop builder agent configuration",
+  "mcpServers": {
+    "AWS Core MCP Server": {
+      "command": "uvx",
+      "timeout": 60000,
+      "args": [
+        "awslabs.core-mcp-server@latest"
+      ],
+      "env": {
+        "FASTMCP_LOG_LEVEL": "ERROR"
+      }
+    },
+    "AWS Documentation MCP Server": {
+      "command": "uvx",
+      "timeout": 60000,
+      "args": [
+        "awslabs.aws-documentation-mcp-server@latest"
+      ],
+      "env": {
+        "FASTMCP_LOG_LEVEL": "ERROR",
+        "AWS_DOCUMENTATION_PARTITION": "aws"
+      }
+    },
+    "awslabs.aws-diagram-mcp-server": {
+      "command": "uvx",
+      "args": ["awslabs.aws-diagram-mcp-server"],
+      "env": {
+        "FASTMCP_LOG_LEVEL": "ERROR"
+      },
+      "autoApprove": [],
+      "disabled": false
+    },
+    "strands": {
+      "command": "uvx",
+      "args": ["strands-agents-mcp-server"]
+    },
+    "aws-knowledge-mcp-server": {
+      "command": "npx",
+      "args": [
+          "mcp-remote",
+          "https://knowledge-mcp.global.api.aws"
+      ]
+    }
+  },
+  "tools": [
+	"*"
+  ],
+  "allowedTools": [
+    "read",
+    "write"
+  ],
+  "toolsSettings": {
+    "execute_bash": {
+      "alwaysAllow": [
+        {
+          "preset": "readOnly"
+        }
+      ]
+    },
+    "use_aws": {
+      "alwaysAllow": [
+        {
+          "preset": "readOnly"
+        }
+      ]
+    }
+  },
+  "resources": [
+    "file://.kiro/steering/principle.md"
+  ]
+}

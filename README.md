@@ -60,6 +60,12 @@ sample-amazon-bedrock-agentcore-onboarding/
 │   ├── README.md                 # 📖 Memory integration hands-on guide
 │   └── test_memory.py            # Memory-enhanced agent implementation
 │
+├── a1_custom/                    # 📚 Appendix: Build your own agent
+│   ├── README.md                 # 📖 Custom weather agent guide
+│   ├── weather_agent/            # Weather agent implementation
+│   ├── prepare_agent.py          # Deployment preparation
+│   └── test_agentcore_endpoint.py # End-to-end testing
+│
 ├── pyproject.toml                # Project dependencies and configuration
 ├── uv.lock                       # Dependency lock file
 └── README.md                     # This overview document
@@ -180,6 +186,10 @@ uv run python clean_resources.py
 # 4. Clean up Runtime resources
 cd 02_runtime
 uv run python clean_resources.py
+
+# 5. Clean up Custom Agent resources (if deployed)
+cd a1_custom
+uv run python clean_resources.py
 ```
 
 ## Getting Help
@@ -195,6 +205,7 @@ uv run python clean_resources.py
 - [Amazon Bedrock AgentCore Developer Guide](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/)
 - [AWS Support](https://aws.amazon.com/support/) for account-specific issues
 - [GitHub Issues](https://github.com/aws-samples/sample-amazon-bedrock-agentcore-onboarding/issues) for project-specific questions
+
 
 ## Contributing
 

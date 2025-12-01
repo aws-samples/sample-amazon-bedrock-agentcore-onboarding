@@ -48,11 +48,7 @@
 	"*"
   ],
   "allowedTools": [
-    "fsRead",
-    "fsWrite",
-    "fsReplace",
-    "listDirectory",
-    "fileSearch"
+    "read"
   ],
   "toolsSettings": {
     "execute_bash": {
@@ -71,6 +67,6 @@
     }
   },
   "resources": [
-    "file://.amazonq/rules/principle.md"
+    "file://.kiro/steering/principle.md"
   ]
 }

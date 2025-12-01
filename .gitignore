@@ -209,4 +209,6 @@ __marimo__/
 .agentcore.json
 
 a1_custom/*
+!a1_custom/README.md
+!a1_custom/README_ja.md
 !a1_custom/.kiro

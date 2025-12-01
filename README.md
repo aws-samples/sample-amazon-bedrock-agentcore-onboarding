@@ -60,9 +60,9 @@ sample-amazon-bedrock-agentcore-onboarding/
 │   ├── README.md                 # 📖 Memory integration hands-on guide
 │   └── test_memory.py            # Memory-enhanced agent implementation
 │
-├── a1_custom/                    # 📚 Appendix: Build your own agent
-│   ├── README.md                 # 📖 Custom weather agent guide
-│   ├── weather_agent/            # Weather agent implementation
+├── a1_custom/                    # 📚 Appendix: Build your own custom agent
+│   ├── README.md                 # 📖 Custom agent development guide
+│   ├── weather_agent/            # Example: Weather agent implementation
 │   ├── prepare_agent.py          # Deployment preparation
 │   └── test_agentcore_endpoint.py # End-to-end testing
 │
@@ -104,6 +104,13 @@ sample-amazon-bedrock-agentcore-onboarding/
    - Implement short-term and long-term memory capabilities
    - Create personalized, adaptive agent experiences
    - **Time**: ~15 minutes | **Difficulty**: Advanced
+
+### 📚 Appendix
+
+**[A1. Custom Agent](a1_custom/README.md)** - Build your own custom agent
+   - Learn to create agents tailored to your specific use case
+   - Example implementation provided (weather agent)
+   - **Time**: ~20 minutes | **Difficulty**: Intermediate
 
 ### 🎯 Focused Learning (By Use Case)
 
@@ -187,9 +194,6 @@ uv run python clean_resources.py
 cd 02_runtime
 uv run python clean_resources.py
 
-# 5. Clean up Custom Agent resources (if deployed)
-cd a1_custom
-uv run python clean_resources.py
 ```
 
 ## Getting Help

@@ -206,3 +206,7 @@ marimo/_static/
 marimo/_lsp/
 __marimo__/
 .workspace/
+.agentcore.json
+
+a1_custom/*
+!a1_custom/.kiro

@@ -23,6 +23,7 @@ When asked to build an agent, follow this structured approach.
    - Document requirements, design decisions, and implementation details with 3 sections: Specification, Design, Implementation Tasks
    - Leverage graphics (Mermaid) to visualize the agent's workflow
    - Iterate with users to establish clear agreement on specifications
+   - Leverage tools available from strands-agents-tools
 
 3. **Initialize Project Structure**
    - Create source directory (e.g., `weather_agent/`) for agent code in agent root directory

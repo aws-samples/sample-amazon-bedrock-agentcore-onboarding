@@ -35,7 +35,7 @@ sequenceDiagram
 ### ファイル構成
 
 ```
-03_identity/
+06_identity/
 ├── README.md                      # このドキュメント
 ├── setup_inbound_authorizer.py    # OAuth2プロバイダーとセキュアランタイムセットアップ
 └── test_identity_agent.py         # Identity認証付きテストエージェント
@@ -44,7 +44,7 @@ sequenceDiagram
 ### ステップ1: OAuth2認証情報プロバイダーとセキュアランタイムを作成
 
 ```bash
-cd 03_identity
+cd 06_identity
 uv run python setup_inbound_authorizer.py
 ```
 
@@ -57,7 +57,7 @@ uv run python setup_inbound_authorizer.py
 ### ステップ2: Identity保護エージェントをテスト
 
 ```bash
-cd 03_identity
+cd 06_identity
 uv run python test_identity_agent.py
 ```
 
@@ -171,4 +171,4 @@ print(result)
 
 ---
 
-**次のステップ**: ここで実演されたパターンを使用して、Identity保護エージェントをアプリケーションに統合するか、[04_gateway](../04_gateway/README.md)に進んでMCP互換APIを通じてエージェントを公開しましょう。
+**次のステップ**: ここで実演されたパターンを使用して、Identity保護エージェントをアプリケーションに統合するか、[07_gateway](../07_gateway/README.md)に進んでMCP互換APIを通じてエージェントを公開しましょう。

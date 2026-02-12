@@ -49,7 +49,7 @@ sequenceDiagram
 ### ファイル構成
 
 ```
-06_memory/
+03_memory/
 ├── README.md                      # このドキュメント
 └── test_memory.py                 # メイン実装とテストスイート
 ```
@@ -57,7 +57,7 @@ sequenceDiagram
 ### ステップ1: 既存のメモリで実行（高速）
 
 ```bash
-cd 06_memory
+cd 03_memory
 uv run python test_memory.py
 ```
 
@@ -66,7 +66,7 @@ uv run python test_memory.py
 ### ステップ2: 強制再作成（クリーンスタート）
 
 ```bash
-cd 06_memory
+cd 03_memory
 uv run python test_memory.py --force
 ```
 

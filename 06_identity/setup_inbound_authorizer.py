@@ -9,7 +9,7 @@ Prerequisites:
 - AWS credentials configured with bedrock-agentcore-control permissions
 
 Usage:
-    uv run python 03_identity/setup_inbound_authorizer.py
+    uv run python 06_identity/setup_inbound_authorizer.py
 """
 
 import json

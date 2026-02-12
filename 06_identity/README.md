@@ -35,7 +35,7 @@ sequenceDiagram
 ### File Structure
 
 ```
-03_identity/
+06_identity/
 ├── README.md                      # This documentation
 ├── setup_inbound_authorizer.py    # OAuth2 provider and secure runtime setup
 └── test_identity_agent.py         # Test agent with identity authentication
@@ -44,7 +44,7 @@ sequenceDiagram
 ### Step 1: Create OAuth2 Credential Provider and Secure Runtime
 
 ```bash
-cd 03_identity
+cd 06_identity
 uv run python setup_inbound_authorizer.py
 ```
 
@@ -57,7 +57,7 @@ This script will:
 ### Step 2: Test Identity-Protected Agent
 
 ```bash
-cd 03_identity
+cd 06_identity
 uv run python test_identity_agent.py
 ```
 
@@ -172,4 +172,4 @@ print(result)
 
 ---
 
-**Next Steps**: Integrate identity-protected agents into your applications using the patterns demonstrated here, or continue with [04_gateway](../04_gateway/README.md) to expose agents through MCP-compatible APIs.
+**Next Steps**: Integrate identity-protected agents into your applications using the patterns demonstrated here, or continue with [07_gateway](../07_gateway/README.md) to expose agents through MCP-compatible APIs.

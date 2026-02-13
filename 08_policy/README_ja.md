@@ -4,15 +4,15 @@
 
 ## なぜツールレベルのアクセス制御が必要か？
 
-[07_gateway](../07_gateway/README.md) では、AWSコスト見積もりレポートをメールで送信する `markdown_to_email` ツールを構築しました。これは強力ですが、リスクもあります。エージェントの **すべてのユーザー** が外部クライアントにメールを送信できるべきでしょうか？
+[07_gateway](../07_gateway/README.md) では、AWSコスト見積もりレポートをメールで送信する `markdown_to_email` ツールを構築しました。これは強力な機能ですが、リスクも伴います。エージェントを利用する **すべてのユーザー** が外部クライアントにメールを送信できてよいのでしょうか？
 
 企業における以下のシナリオを考えてみましょう：
 - **Developer（開発者）** は社内レビューや計画のためにコスト見積もりを作成する
 - **Manager（マネージャー）** は見積もりをレビューし、正式な提案としてクライアントに送信する
 
-Developerがクライアントに直接メールを送信できるべきではありません — 見積もりを外部に送信する権限を持つのはManagerのみです。
+Developerがクライアントに直接メールを送信できてはなりません — 見積もりを外部に送る権限を持つのはManagerだけです。
 
-きめ細かい制御がなければ、Gatewayを呼び出せる認証済みユーザーは `markdown_to_email` を含む **すべてのツール** を使用できてしまいます。IAM単体ではこの問題を解決できません。IAMは **AWSサービスレベル**（「このプリンシパルはGateway APIを呼び出せるか？」）で動作するものであり、**ツールレベル**（「このプリンシパルはメールツールを使えるか？」）ではないからです。
+きめ細かい制御がなければ、Gatewayを呼び出せる認証済みユーザーは `markdown_to_email` を含む **すべてのツール** を使用できてしまいます。IAMだけではこの問題を解決できません。IAMは **AWSサービスレベル**（「このプリンシパルはGateway APIを呼び出せるか？」）で機能するものであり、**ツールレベル**（「このプリンシパルはメールツールを使えるか？」）の制御には対応していないためです。
 
 これこそが **AgentCore Policy** が解決する問題です。
 
@@ -31,21 +31,28 @@ AgentCore Policyは、Gatewayとツールの間に位置する **決定論的で
 | **コンテキスト** | AWSアイデンティティ、リソースタグ | OAuthスコープ、ユーザー属性、ツール入力パラメータ |
 | **生成方法** | 手動またはIAM Access Analyzer | NL2Cedar（自然言語からCedarへ） |
 
-**ポイント**: IAMとPolicyは補完的です。IAMは *誰がGatewayに到達できるか* を制御し、Policyは *各呼び出し元がGateway内でどのツールを使えるか* を制御します。
+**ポイント**: IAMとPolicyは補完関係にあります。IAMは *誰がGatewayを呼び出せるか* を制御し、Policyは *各呼び出し元がGateway内でどのツールを使えるか* を制御します。
 
-### Cedarポリシーの制限の種類
+### AgentCoreにおけるCedarポリシーの理解
 
-Cedarポリシーは複数の次元でツールアクセスを制限できます：
+#### 1. AgentCore PolicyはCedarを使用
 
-| 制限の種類 | Cedar式 | 例 |
-|:---|:---|:---|
-| **プリンシパル別** | `principal == AgentCore::OAuthUser::"<client_id>"` | 特定のOAuthクライアントのみツール使用可能 |
-| **OAuthスコープ別** | `principal.getTag("scope") like "*email-send*"` | `email-send`スコープを持つクライアントのみメール送信可能 |
-| **ユーザーID別** | `principal.getTag("username") == "john"` | 特定のユーザーのみ機密ツールにアクセス可能 |
-| **ロール別** | `principal.getTag("role") == "manager"` | マネージャーのみ取引を承認可能 |
-| **ツール入力別** | `context.input.amount < 500` | 返金額を$500未満に制限 |
-| **ツール入力（文字列）** | `context.input.region == "US"` | 特定の地域でのみ操作を許可 |
-| **組み合わせ** | `condition1 && condition2` | 複数条件の組み合わせ |
+AgentCore Policyは、AWSが開発したオープンソースのポリシー言語 **[Cedar](https://www.cedarpolicy.com/)** を使用します。Cedarは認可に特化した言語で、「このリクエストを許可すべきか？」という問いに対して決定論的かつ形式検証可能なロジックで判断します。AgentCoreはCedarをネイティブポリシー言語として採用しており、ツールレベルのアクセス制御はCedarポリシーとして記述します。
+
+#### 2. Cedarポリシーの構造
+
+すべてのCedarポリシーは、**効果**（`permit` または `forbid`）付きの**スコープ**と、オプションの**条件**（`when` / `unless`）で構成されます：
+
+```cedar
+permit (                           -- 効果: permit または forbid
+  principal is <PrincipalType>,    -- 誰がリクエストしているか？
+  action == <Action>,              -- どのツール/操作を呼び出しているか？
+  resource == <Resource>           -- どのGatewayを対象としているか？
+)
+when {                             -- いつ: 追加条件（オプション）
+  <条件式>
+};
+```
 
 Cedarには2つの効果があります：
 - **`permit`** — 条件が満たされた場合にアクションを許可
@@ -53,20 +60,37 @@ Cedarには2つの効果があります：
 
 デフォルトの動作は **すべて拒否** です。一致する `permit` ポリシーがなければ、すべてのツール呼び出しはブロックされます。これはセキュリティにおいて最も安全なデフォルトです。
 
-### M2M認証とPolicyの連携
+#### 3. AgentCoreにおけるPrincipal、Action、Resourceのマッピング
 
-このワークショップでは、Cognitoの `client_credentials` フローによる **M2M（Machine-to-Machine）OAuth** を使用し、「Manager」用と「Developer」用の2つのアプリクライアントを作成します。CedarポリシーでManagerのクライアントIDにのみメールツールの使用を許可します。
+Gatewayがツール呼び出しを受信すると、AgentCoreは以下の2つのソースからCedar認可リクエストを自動構築します：
 
-> **注意: これはワークショップの簡略化です。** 本番環境では、M2Mの `client_credentials` は通常、**サービス間**通信に使用され、各*ロール*ではなく各*サービス*が独自のクライアントIDを持ちます。個人ユーザーのロールベースアクセス制御には通常 **Authorization Code** フローを使用し、各ユーザーのJWTに `username`、`role`、`scope` などのクレームを含めてCedarで評価します。ここでは2クライアント方式を採用していますが、これはログインUIやユーザー管理のセットアップなしにCedarのprincipalマッチングとデフォルト拒否の動作を実演するためです。
+1. **JWTトークン** → **principal**（誰）とその **tags**（クレーム）を決定
+2. **MCPツール呼び出し** → **action**（どのツール）と **context**（ツール引数）を決定
 
-`client_credentials` フローでは、各アプリクライアントが一意の **クライアントID** を持ち、これがJWTの `sub` クレームとしてCedarの **principal** になります：
+| Cedar要素 | ソース | AgentCoreマッピング |
+|:---|:---|:---|
+| **principal** | JWT `sub` クレーム → エンティティID、他のクレーム → タグ | `AgentCore::OAuthUser::"<sub>"` タグ: `{ "username": "...", "role": "...", "scope": "..." }` |
+| **action** | MCPツール呼び出しの `name` フィールド | `AgentCore::Action::"<TargetName>___<ToolName>"` |
+| **resource** | GatewayインスタンスARN | `AgentCore::Gateway::"arn:aws:bedrock-agentcore:..."` |
+| **context** | MCPツール呼び出しの `arguments` | `context.input.amount`、`context.input.orderId` など |
 
-```
-Managerアプリクライアント   →  client_id: "7uhj6fu45r..."  →  principal: AgentCore::OAuthUser::"7uhj6fu45r..."
-Developerアプリクライアント →  client_id: "50q0p06bq3..."  →  principal: AgentCore::OAuthUser::"50q0p06bq3..."
-```
+> **ポイント**: これらのエンティティを自分で構築する必要はありません。AgentCoreが受信したJWTを解析し、呼び出し対象のツールを特定し、Gateway ARNを取得したうえで、3つすべてをCedarエンジンに渡して評価します。
+>
+> **参考**: 認可フローの詳細は[Authorization Flow](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/policy-authorization-flow.html)を参照。スコープ要素の定義は[Policy Scope](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/policy-scope.html)を参照。条件式（`when`/`unless`句）は[Policy Conditions](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/policy-conditions.html)を参照。
 
-Cedarポリシーは `principal == AgentCore::OAuthUser::"<manager_client_id>"` でManagerのみにメールツールの使用を許可します。Developerのクライアントに対する `permit` ポリシーがないため、デフォルト拒否により自動的にブロックされます。
+#### 4. このワークショップ: M2Mプリンシパルマッチング
+
+このワークショップでは、Cognitoの `client_credentials` フローによる **M2M（Machine-to-Machine）OAuth** を使用します。「Manager」用と「Developer」用の2つのアプリクライアントを作成し、CedarポリシーでManagerにのみメール送信を許可します。`client_credentials` フローでは、各アプリクライアントが一意の **クライアントID** を持ち、これがJWTの `sub` クレームとしてCedarの **principal** になります。
+
+Cedarポリシーで `principal == AgentCore::OAuthUser::"<manager_client_id>"` と指定し、Managerのみにメールツールの使用を許可します。DeveloperのクライアントIDに一致する `permit` がないため、デフォルト拒否により自動的にブロックされます。
+
+Authorization Codeフローで `username`、`role`、`scope` などのクレームを含むJWTを利用する場合、このようなクライアント分離は不要です。
+
+| Cedar要素 | このワークショップでのM2M値 |
+|:---|:---|
+| **principal** | `AgentCore::OAuthUser::"<client_id>"` — JWT `sub` クレーム、アプリクライアントごとに一意 |
+| **action** | `AgentCore::Action::"AWSCostEstimatorGatewayTarget___markdown_to_email"` |
+| **resource** | `AgentCore::Gateway::"arn:aws:bedrock-agentcore:...:gateway/..."` |
 
 > **本番環境: スコープベースまたはロールベースのマッチング**
 >
@@ -84,7 +108,7 @@ Cedarポリシーは `principal == AgentCore::OAuthUser::"<manager_client_id>"` 
 >   principal.getTag("role") == "manager"
 > };
 > ```
-> これらのパターンはポリシーを特定のクライアントIDから切り離し、本番環境で推奨されるアプローチです。Cedar `when` 句では、ユーザーID（`principal.getTag("username")`）やツール入力パラメータ（`context.input.amount < 500`）による制限も可能です。詳細は[一般的なポリシーパターン](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/policy-common-patterns.html)と[ポリシー例](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/example-policies.html)を参照してください。
+> これらのパターンはポリシーを特定のクライアントIDに依存させず、本番環境で推奨されるアプローチです。Cedar `when` 句では、ユーザーID（`principal.getTag("username")`）やツール入力パラメータ（`context.input.amount < 500`）による制限も可能です。詳細は[一般的なポリシーパターン](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/policy-common-patterns.html)と[ポリシー例](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/example-policies.html)を参照してください。Cedarの演算子構文については[Cedar Operators Reference](https://docs.cedarpolicy.com/policies/syntax-operators.html)を参照してください。
 
 ## プロセス概要
 
@@ -116,8 +140,6 @@ sequenceDiagram
 1. **06_identity** — 完了済み（Cognitoユーザープール + OAuth2プロバイダー）
 2. **07_gateway** — 完了済み（`markdown_to_email` Lambda付きMCP Gateway）
 3. **AWS認証情報** — Bedrock AgentCoreおよびCognito権限付き
-4. **Python 3.12+** — async/awaitサポートに必要
-5. **依存関係** — `uv`経由でインストール（pyproject.toml参照）
 
 ## 使用方法
 
@@ -154,7 +176,7 @@ uv run python 08_policy/setup_policy.py
 uv run python 08_policy/test_policy.py --role developer --address you@example.com
 ```
 
-DeveloperのトークンにはManagerとは異なる `sub`（クライアントID）が含まれています。CedarポリシーにはDeveloperのprincipalに一致する `permit` がないため、**デフォルト拒否** により `markdown_to_email` ツールがツール一覧に **表示されません**。エージェントはコスト見積もりを行いますが、メールは送信できません。ログ出力のツール一覧を比較してください — `markdown_to_email` がポリシーによりフィルタリングされています。
+DeveloperのトークンにはManagerとは異なる `sub`（クライアントID）が含まれています。CedarポリシーにはDeveloperのprincipalに一致する `permit` がないため、**デフォルト拒否** により `markdown_to_email` ツールはツール一覧に **表示されません**。エージェントはコスト見積もりを実行しますが、メールは送信できません。ログ出力のツール一覧を比較すると、`markdown_to_email` がポリシーにより除外されていることを確認できます。
 
 ### ステップ3: Managerとしてテスト（メール許可）
 
@@ -162,7 +184,7 @@ DeveloperのトークンにはManagerとは異なる `sub`（クライアントI
 uv run python 08_policy/test_policy.py --role manager --address you@example.com
 ```
 
-ManagerのトークンにはCedarポリシーが明示的に許可するクライアントIDが含まれています。ポリシーが `principal` の一致を検出し、`markdown_to_email` ツール呼び出しを **許可** します。エージェントはコストを見積もり、クライアントにメールを送信します。
+ManagerのトークンにはCedarポリシーで明示的に許可されたクライアントIDが含まれています。ポリシーが `principal` に一致するため、`markdown_to_email` ツールの呼び出しが **許可** されます。エージェントはコスト見積もりを実行し、結果をメールで送信します。
 
 ### ステップ4: クリーンアップ
 
@@ -182,13 +204,13 @@ permit(
 );
 ```
 
-このポリシーの意味：「Managerアプリケーション（OAuthクライアントIDで識別）がこのGatewayの `markdown_to_email` ツールを呼び出すことを許可する。」
+このポリシーは「Managerアプリケーション（OAuthクライアントIDで識別）に、このGateway上の `markdown_to_email` ツールの呼び出しを許可する」という意味です。
 
-`setup_policy.py` スクリプトがManagerの実際のクライアントIDを自動的にポリシーに挿入します。DeveloperのクライアントIDに対する `permit` ポリシーがないため、デフォルト拒否の動作により自動的にブロックされ、メールツールはDeveloperのツール一覧に表示されません。
+`setup_policy.py` がManagerの実際のクライアントIDをポリシーに自動挿入します。DeveloperのクライアントIDに対する `permit` ポリシーがないため、デフォルト拒否により自動的にブロックされ、メールツールはDeveloperのツール一覧に表示されません。
 
 ### NL2Cedar: 自然言語からポリシー生成
 
-AgentCore Policyの最も強力な機能の一つが **NL2Cedar** — `StartPolicyGeneration` を使用して、平易な自然言語の説明からCedarポリシーを生成する機能です。
+AgentCore Policyの強力な機能の一つが **NL2Cedar** です。`StartPolicyGeneration` を使って、自然言語の説明からCedarポリシーを生成できます。
 
 ```python
 # ポリシーの意図を自然言語で記述
@@ -201,7 +223,7 @@ nl_description = (
 # Cedarポリシーを生成
 generation = policy_client.generate_policy(
     policy_engine_id=engine_id,
-    name="demo-nl2cedar-generation",
+    name="demo_nl2cedar_generation",
     resource={"arn": gateway_arn},
     content={"rawText": nl_description},
     fetch_assets=True,
@@ -212,7 +234,7 @@ for asset in generation["generatedPolicies"]:
     print(asset["definition"]["cedar"]["statement"])
 ```
 
-`setup_policy.py` はこれを参考用のデモとして実行し、生成されたCedarを確認できます。実際の運用では：
+`setup_policy.py` ではこのNL2Cedar生成をデモとして実行するため、生成されたCedarを確認できます。実際の運用では：
 1. 自然言語から候補ポリシーを生成
 2. 生成されたCedarをレビューし、必要に応じて調整
 3. `CreatePolicy` で最終ポリシーを作成
@@ -229,7 +251,7 @@ gateway_client.update_gateway_policy_engine(
 )
 ```
 
-`LOG_ONLY` モードは初期導入時に便利です — ポリシーは評価され判断がログに記録されますが、リクエストは実際にはブロックされません。確信が持てたら `ENFORCE` に切り替えます。
+`LOG_ONLY` モードは初期導入時に便利です — ポリシーの評価結果はログに記録されますが、リクエストは実際にはブロックされません。問題がないことを確認できたら `ENFORCE` に切り替えます。
 
 ## ガバナンスの利点
 
@@ -237,38 +259,32 @@ gateway_client.update_gateway_policy_engine(
 |:---|:---|
 | **デフォルト拒否** | 一致する `permit` がなければ、すべてのツール呼び出しは拒否される |
 | **forbid優先** | `forbid` ポリシーは常に `permit` を上書きし、明示的なブロックリストが可能 |
-| **人間が読みやすい** | Cedarポリシーは開発者以外や監査人にも理解可能 |
-| **形式的に検証可能** | Cedarは過度に許容的なポリシーや常に拒否するポリシーを検出する自動推論をサポート |
-| **決定論的** | ガードレールと異なり、ポリシー判断は確率的ではない — 同じ入力は常に同じ結果 |
-| **監査証跡** | ポリシー判定はコンプライアンスレビュー用にログに記録 |
+| **人間が読みやすい** | Cedarポリシーは非エンジニアや監査担当者でも理解できる |
+| **形式的に検証可能** | Cedarの自動推論により、過度に緩いポリシーや常に拒否するポリシーを検出可能 |
+| **決定論的** | ガードレールと異なり、ポリシーの判断は確率的でない — 同じ入力には常に同じ結果 |
+| **監査証跡** | ポリシーの判定結果がコンプライアンスレビュー用にログとして記録される |
 | **NL2Cedar** | 自然言語から初期ポリシーを生成し、Cedarの学習コストを削減 |
 
 ## まとめ: 多層セキュリティアーキテクチャ
 
-```
-┌─────────────────────────────────────────────┐
-│              IAM                             │
-│  「このプリンシパルはGatewayを呼び出せるか？」    │
-├─────────────────────────────────────────────┤
-│         AgentCore Policy (Cedar)             │
-│  「このプリンシパルはこの特定のツールを          │
-│   これらの特定のパラメータで使えるか？」          │
-├─────────────────────────────────────────────┤
-│       Gateway Interceptors (Lambda)          │
-│  「リクエスト/レスポンスのコンテンツを             │
-│   プログラム的に変換、検証、または編集」          │
-└─────────────────────────────────────────────┘
-```
-
-各レイヤーは異なる関心事に対応します：
-- **IAM**: サービスレベルのアクセス（粗い粒度）
-- **Policy**: ツールレベルの認可（きめ細かく、宣言的）
-- **Interceptors**: リクエスト/レスポンスの変換（プログラム可能、PII編集やカスタム検証など）
+| レイヤー | 答える問い | 粒度 | メカニズム |
+|:---|:---|:---|:---|
+| **IAM** | このプリンシパルはGatewayを呼び出せるか？ | サービスレベル（粗い） | IAMポリシー |
+| **AgentCore Policy (Cedar)** | このプリンシパルはこの特定のツールをこれらのパラメータで使えるか？ | ツールレベル（きめ細かい） | Cedar permit/forbidポリシー |
+| **Gateway Interceptors (Lambda)** | リクエスト/レスポンスのコンテンツを変換、検証、または編集するか？ | リクエスト/レスポンスレベル | Lambda関数 |
 
 ## 参考資料
 
 - [AgentCore Policy開発者ガイド](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/policy.html)
+- [AgentCoreにおけるCedarポリシーの理解](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/policy-understanding-cedar.html)
+- [Authorization Flow](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/policy-authorization-flow.html)
+- [Policy Scope（Principal、Action、Resource）](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/policy-scope.html)
+- [Policy Conditions（when/unless句）](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/policy-conditions.html)
+- [ポリシー例](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/example-policies.html)
+- [一般的なポリシーパターン](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/policy-common-patterns.html)
 - [Cedarポリシー言語](https://www.cedarpolicy.com/)
+- [Cedar Operators Reference](https://docs.cedarpolicy.com/policies/syntax-operators.html)
+- [Cedar Policy Syntax](https://docs.cedarpolicy.com/policies/syntax-policy.html)
 - [Strands Agentsドキュメント](https://github.com/strands-agents/sdk-python)
 
 ---

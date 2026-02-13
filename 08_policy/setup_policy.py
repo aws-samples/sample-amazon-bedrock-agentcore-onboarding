@@ -37,8 +37,8 @@ IDENTITY_FILE = Path("../06_identity/inbound_authorizer.json")
 GATEWAY_FILE = Path("../07_gateway/outbound_gateway.json")
 CONFIG_FILE = Path("policy_config.json")
 
-POLICY_ENGINE_NAME = "cost-estimator-policy-engine"
-POLICY_NAME = "email-scope-policy"
+POLICY_ENGINE_NAME = "cost_estimator_policy_engine"
+POLICY_NAME = "email_scope_policy"
 RESOURCE_SERVER_IDENTIFIER = "cost-estimator"
 RESOURCE_SERVER_NAME = "CostEstimatorScopes"
 EMAIL_SCOPE_NAME = "email-send"
@@ -286,7 +286,7 @@ def setup_policy_engine(console: Console) -> dict:
         )
         generation = policy_client.generate_policy(
             policy_engine_id=engine_id,
-            name="demo-nl2cedar-generation",
+            name="demo_nl2cedar_generation",
             resource={"arn": gateway_arn},
             content={"rawText": nl_description},
             fetch_assets=True,
@@ -310,21 +310,22 @@ def setup_policy_engine(console: Console) -> dict:
     # Step 3: Create the actual Cedar policy
     if "policy" not in config:
         # The target name follows convention: GatewayName + "Target"
-        # The action format is: TargetName__ToolName
+        # The action format is: TargetName___ToolName (triple underscore)
         target_name = "AWSCostEstimatorGatewayTarget"
         tool_name = "markdown_to_email"
-        action_name = f"{target_name}__{tool_name}"
+        action_name = f"{target_name}___{tool_name}"
+
+        # Use principal identity matching (JWT sub claim = Cognito client_id for M2M)
+        # This permits the email tool ONLY for the Manager's client_id
+        cognito_config = load_config().get("cognito_clients", {})
+        manager_client_id = cognito_config["manager"]["client_id"]
 
         cedar_statement = (
             "permit(\n"
-            "  principal is AgentCore::OAuthUser,\n"
+            f'  principal == AgentCore::OAuthUser::"{manager_client_id}",\n'
             f'  action == AgentCore::Action::"{action_name}",\n'
             f'  resource == AgentCore::Gateway::"{gateway_arn}"\n'
-            ")\n"
-            "when {\n"
-            '  principal.hasTag("scope") &&\n'
-            '  principal.getTag("scope") like "*email-send*"\n'
-            "};"
+            ");"
         )
 
         console.print(Panel(
@@ -338,8 +339,8 @@ def setup_policy_engine(console: Console) -> dict:
             name=POLICY_NAME,
             definition={"cedar": {"statement": cedar_statement}},
             description=(
-                "Permit markdown_to_email tool only for OAuth users "
-                "whose token contains the email-send scope"
+                "Permit markdown_to_email tool only for the Manager "
+                "OAuth client (identified by JWT sub claim)"
             ),
         )
         policy_id = policy["policyId"]

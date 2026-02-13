@@ -2,8 +2,6 @@
 
 [English](README.md) / [日本語](README_ja.md)
 
-## Why Do We Need Tool-Level Access Control?
-
 In [07_gateway](../07_gateway/README.md), we built a `markdown_to_email` tool that sends AWS cost estimation reports via email. This is powerful — but also risky. Should **every** user of the agent be allowed to send emails to external clients?
 
 Consider this scenario in an enterprise:
@@ -31,21 +29,28 @@ AgentCore Policy is a **deterministic, Cedar-based authorization layer** that si
 | **Context** | AWS identity, resource tags | OAuth scopes, user attributes, tool input parameters |
 | **Generation** | Manual or IAM Access Analyzer | NL2Cedar (natural language to Cedar) |
 
-**Key insight**: IAM and Policy are complementary. IAM controls *who can reach the Gateway*. Policy controls *what tools each caller can use* within the Gateway.
+**Key insight**: IAM and Policy are complementary. IAM controls *who can invoke the Gateway*. Policy controls *what tools each caller can use* within the Gateway.
 
-### Types of Restrictions in Cedar Policies
+### Understanding Cedar Policies in AgentCore
 
-Cedar policies can restrict tool access based on several dimensions:
+#### 1. AgentCore Policy Uses Cedar
 
-| Restriction Type | Cedar Expression | Example |
-|:---|:---|:---|
-| **By OAuth scope** | `principal.getTag("scope") like "*email-send*"` | Only clients with `email-send` scope can send emails |
-| **By user identity** | `principal.getTag("username") == "john"` | Only specific users can access sensitive tools |
-| **By role** | `principal.getTag("role") == "manager"` | Only managers can approve transactions |
-| **By tool input** | `context.input.amount < 500` | Restrict refund amounts under $500 |
-| **By tool input (string)** | `context.input.region == "US"` | Only allow operations in specific regions |
-| **By tool input (set)** | `["US","CA"].contains(context.input.country)` | Restrict to allowed countries |
-| **Combination** | `condition1 && condition2` | Multiple conditions combined |
+AgentCore Policy uses **[Cedar](https://www.cedarpolicy.com/)**, an open-source policy language developed by AWS. Cedar is designed for authorization — it answers the question "is this request allowed?" with deterministic, formally verifiable logic. AgentCore adopts Cedar as its native policy language, so writing tool-level access control means writing Cedar policies.
+
+#### 2. Cedar Policy Structure
+
+Every Cedar policy has two parts: an **effect** (`permit` or `forbid`) with a **scope**, and optional **conditions** (`when` / `unless`):
+
+```cedar
+permit (                           -- Effect: permit or forbid
+  principal is <PrincipalType>,    -- WHO is making the request?
+  action == <Action>,              -- WHAT tool/operation are they calling?
+  resource == <Resource>           -- WHERE (which Gateway) is the request targeting?
+)
+when {                             -- WHEN: additional conditions (optional)
+  <condition expressions>
+};
+```
 
 Cedar has two effects:
 - **`permit`** — Allow the action when conditions are met
@@ -53,20 +58,46 @@ Cedar has two effects:
 
 The default behavior is **deny-all**: without any matching `permit` policy, all tool calls are blocked. This is the safest default for security.
 
-### How M2M Authorization Works with Policy
+#### 3. How Principal, Action, and Resource Map in AgentCore
 
-In this workshop, we use **M2M (Machine-to-Machine) OAuth** via Cognito `client_credentials` flow. An important question arises: *Can we enforce role-based policies with M2M tokens?*
+When a tool call arrives at the Gateway, AgentCore automatically constructs the Cedar authorization request from two sources:
 
-**M2M tokens don't carry user identity** (no `username`, no `role` claim) — they represent an application, not a person. However, M2M tokens **do carry OAuth scopes**, and scopes can differ per OAuth client. We leverage this:
+1. **JWT token** → determines the **principal** (who) and its **tags** (claims)
+2. **MCP tool call** → determines the **action** (what tool) and **context** (tool arguments)
+
+| Cedar Element | Source | AgentCore Mapping |
+|:---|:---|:---|
+| **principal** | JWT `sub` claim → entity ID, all other claims → tags | `AgentCore::OAuthUser::"<sub>"` with tags: `{ "username": "...", "role": "...", "scope": "..." }` |
+| **action** | MCP tool call `name` field | `AgentCore::Action::"<TargetName>__<ToolName>"` |
+| **resource** | Gateway instance ARN | `AgentCore::Gateway::"arn:aws:bedrock-agentcore:..."` |
+| **context** | MCP tool call `arguments` | `context.input.amount`, `context.input.orderId`, etc. |
+
+> **Key point**: You do NOT construct these entities yourself. AgentCore parses the incoming JWT, identifies the tool being called, and resolves the Gateway ARN — then passes all three to the Cedar engine for evaluation.
+>
+> **Reference**: For details on the authorization flow, see [Authorization Flow](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/policy-authorization-flow.html). For scope element definitions, see [Policy Scope](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/policy-scope.html). For condition expressions (`when`/`unless` clauses), see [Policy Conditions](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/policy-conditions.html).
+
+#### 4. In This Workshop: M2M Token Mapping
+
+In this workshop, we use **M2M (Machine-to-Machine) OAuth** via Cognito `client_credentials` flow. M2M tokens don't carry user identity (`username`, `role`) — they represent an **application**, not a person. The three Cedar elements resolve as:
+
+| Cedar Element | M2M Value in This Workshop |
+|:---|:---|
+| **principal** | `AgentCore::OAuthUser` — tags contain only the token's `scope` claim (no `username` or `role`) |
+| **action** | `AgentCore::Action::"AWSCostEstimatorGatewayTarget__markdown_to_email"` |
+| **resource** | `AgentCore::Gateway::"arn:aws:bedrock-agentcore:...:gateway/..."` |
+
+The Manager and Developer tokens differ only in their **scope** claim:
 
 ```
-Manager app client   →  token with scopes: [invoke, email-send]
-Developer app client →  token with scopes: [invoke]
+Manager app client   →  token scope: "agentcore-runtime/invoke cost-estimator/email-send"
+Developer app client →  token scope: "agentcore-runtime/invoke"
 ```
 
-The Cedar policy checks the `scope` claim to decide whether the email tool is allowed. This effectively models "roles" as separate OAuth clients with different scope sets.
+This is why our Cedar policy checks `principal.getTag("scope") like "*email-send*"` — it's the only distinguishing attribute available in M2M tokens.
 
 > **Note**: For true per-user policies (e.g., "allow John but deny Jane"), you would use the **Authorization Code** flow instead of Client Credentials, so that each user's JWT contains their individual claims (`username`, `role`, etc.). The scope-based approach used here is the standard pattern for M2M scenarios.
+
+Beyond the scope-based pattern used in this workshop, Cedar `when` clauses can also restrict by user identity (`principal.getTag("username")`), role (`principal.getTag("role")`), and tool input parameters (`context.input.amount < 500`). For more patterns, see [Common Policy Patterns](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/policy-common-patterns.html) and [Example Policies](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/example-policies.html). For Cedar operator syntax (`like`, `contains`, `&&`, `||`, etc.), see the [Cedar Operators Reference](https://docs.cedarpolicy.com/policies/syntax-operators.html).
 
 ## Process Overview
 
@@ -80,16 +111,17 @@ sequenceDiagram
 
     M->>GW: Request (token with email-send scope)
     GW->>GW: Cedar: scope matches → PERMIT
+    Note over GW: Tool list: [cost_estimator, markdown_to_email]
     GW->>CE: Estimate costs
     CE-->>GW: Cost report
     GW->>Tool: Send email
     Tool-->>M: Email sent ✓
 
     D->>GW: Request (token without email-send scope)
-    GW->>GW: Cedar: no matching scope → DENY
+    GW->>GW: Cedar: no matching scope → filtered out
+    Note over GW: Tool list: [cost_estimator] (email tool hidden)
     GW->>CE: Estimate costs
-    CE-->>D: Cost report
-    GW--xD: Email DENIED by policy ✗
+    CE-->>D: Cost report only (agent never sees email tool)
 ```
 
 ## Prerequisites
@@ -97,8 +129,6 @@ sequenceDiagram
 1. **06_identity** — Complete (Cognito user pool + OAuth2 provider)
 2. **07_gateway** — Complete (MCP Gateway with `markdown_to_email` Lambda tool)
 3. **AWS credentials** — With Bedrock AgentCore and Cognito permissions
-4. **Python 3.12+** — Required for async/await support
-5. **Dependencies** — Installed via `uv` (see pyproject.toml)
 
 ## How to Use
 
@@ -233,30 +263,24 @@ The `LOG_ONLY` mode is useful during initial rollout — policies are evaluated 
 
 ## Summary: Layered Security Architecture
 
-```
-┌─────────────────────────────────────────────┐
-│              IAM                             │
-│  "Can this principal call the Gateway?"      │
-├─────────────────────────────────────────────┤
-│         AgentCore Policy (Cedar)             │
-│  "Can this principal use this specific tool  │
-│   with these specific parameters?"           │
-├─────────────────────────────────────────────┤
-│       Gateway Interceptors (Lambda)          │
-│  "Transform, validate, or redact request/    │
-│   response content programmatically"         │
-└─────────────────────────────────────────────┘
-```
-
-Each layer addresses a different concern:
-- **IAM**: Service-level access (coarse-grained)
-- **Policy**: Tool-level authorization (fine-grained, declarative)
-- **Interceptors**: Request/response transformation (programmable, for PII redaction, custom validation, etc.)
+| Layer | Question It Answers | Granularity | Mechanism |
+|:---|:---|:---|:---|
+| **IAM** | Can this principal call the Gateway? | Service-level (coarse) | IAM policies |
+| **AgentCore Policy (Cedar)** | Can this principal use this specific tool with these parameters? | Tool-level (fine) | Cedar permit/forbid policies |
+| **Gateway Interceptors (Lambda)** | Transform, validate, or redact request/response content? | Request/response-level | Lambda functions |
 
 ## References
 
 - [AgentCore Policy Developer Guide](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/policy.html)
+- [Understanding Cedar Policies in AgentCore](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/policy-understanding-cedar.html)
+- [Authorization Flow](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/policy-authorization-flow.html)
+- [Policy Scope (Principal, Action, Resource)](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/policy-scope.html)
+- [Policy Conditions (when/unless clauses)](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/policy-conditions.html)
+- [Example Policies](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/example-policies.html)
+- [Common Policy Patterns](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/policy-common-patterns.html)
 - [Cedar Policy Language](https://www.cedarpolicy.com/)
+- [Cedar Operators Reference](https://docs.cedarpolicy.com/policies/syntax-operators.html)
+- [Cedar Policy Syntax](https://docs.cedarpolicy.com/policies/syntax-policy.html)
 - [Strands Agents Documentation](https://github.com/strands-agents/sdk-python)
 
 ---

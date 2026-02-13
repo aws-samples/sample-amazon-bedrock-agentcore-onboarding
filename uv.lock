@@ -1720,6 +1720,7 @@ dependencies = [
     { name = "pip" },
     { name = "ruff" },
     { name = "strands-agents" },
+    { name = "strands-agents-evals" },
     { name = "strands-agents-tools" },
 ]
 
@@ -1731,6 +1732,7 @@ requires-dist = [
     { name = "pip", specifier = ">=25.1.1" },
     { name = "ruff", specifier = ">=0.12.4" },
     { name = "strands-agents", specifier = ">=1.0.1" },
+    { name = "strands-agents-evals", specifier = ">=0.1.6" },
     { name = "strands-agents-tools", specifier = ">=0.2.1" },
 ]
 
@@ -1828,6 +1830,27 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/00/95/c7c2b4fc3069bc14ee328e7ec0d314e069866612109985be95fdb8ba452b/strands_agents-1.26.0.tar.gz", hash = "sha256:29a297ba4db53007deba2dd7f1caa6a803a4b7e90ab6b82972cf2c753021479f", size = 707613, upload-time = "2026-02-11T20:03:40.231Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/3d/dd/226a383c03482cb0ec9e6226ec3bf9b1e89c0564867c2e9aeba8b9427d55/strands_agents-1.26.0-py3-none-any.whl", hash = "sha256:23175519ac2285566936a3a248cd67b92c831a3417a1d92b64bc2a677c942ad8", size = 349888, upload-time = "2026-02-11T20:03:37.382Z" },
+]
+
+[[package]]
+name = "strands-agents-evals"
+version = "0.1.6"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "boto3" },
+    { name = "opentelemetry-api" },
+    { name = "opentelemetry-instrumentation-threading" },
+    { name = "opentelemetry-sdk" },
+    { name = "pydantic" },
+    { name = "rich" },
+    { name = "strands-agents" },
+    { name = "strands-agents-tools" },
+    { name = "tenacity" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/37/fb/aa8ba1e72953854eda29232b374b4f9912dade2cef1e408483dd617fa5e4/strands_agents_evals-0.1.6.tar.gz", hash = "sha256:73f1c81907ef4cac23cebff1efe715cfc521c1408a82ffcae59f6cff5acde35b", size = 114032, upload-time = "2026-02-11T20:24:22.847Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a6/97/ad6bf80812b33482e1e66b4aa68ccbf75d02534ad4852b87058c55779df7/strands_agents_evals-0.1.6-py3-none-any.whl", hash = "sha256:679262d3381eeb23acc124a82de74f2fbb5647dfd68a65a2212cdd99e5db9307", size = 107828, upload-time = "2026-02-11T20:24:21.059Z" },
 ]
 
 [[package]]

@@ -54,10 +54,10 @@ sample-amazon-bedrock-agentcore-onboarding/
 │   ├── test_memory.py            # メモリ拡張エージェント実装
 │   └── _implementation.md        # 技術的実装詳細
 │
-├── 04_evaluation/                # 品質保証 (近日公開)
-│
-├── 05_observability/             # モニタリングとデバッグ
+├── 04_observability/             # モニタリングとデバッグ
 │   └── README.md                 # 📖 Observabilityセットアップハンズオンガイド
+│
+├── 05_evaluation/                # 品質保証 (近日公開)
 │
 │  # Extension - 外部ツールとの連携
 ├── 06_identity/                  # OAuth 2.0認証
@@ -107,14 +107,14 @@ sample-amazon-bedrock-agentcore-onboarding/
    - パーソナライズされた適応型エージェント体験を作成
    - **所要時間**: ~45分 | **難易度**: 上級
 
-4. **Evaluation** *(近日公開)* - エージェントの品質を保証
-   - 13のビルトイン評価器でエージェントのパフォーマンスをテスト
-   - カスタムモデルベースのスコアリングシステムを作成
-
-5. **[Observability](05_observability/README_ja.md)** - 本番エージェントのモニタリングとデバッグ
+4. **[Observability](04_observability/README_ja.md)** - 本番エージェントのモニタリングとデバッグ
    - 包括的なモニタリングのためのCloudWatch統合を有効化
    - トレーシング、メトリクス、デバッグ機能をセットアップ
    - **所要時間**: ~20分 | **難易度**: 初級
+
+5. **Evaluation** *(近日公開)* - エージェントの品質を保証
+   - 13のビルトイン評価器でエージェントのパフォーマンスをテスト
+   - カスタムモデルベースのスコアリングシステムを作成
 
 ### 🔗 Extension - 外部ツールとの連携
 
@@ -149,13 +149,13 @@ sample-amazon-bedrock-agentcore-onboarding/
 → [01_code_interpreter](01_code_interpreter/README_ja.md)から開始
 
 **本番環境へのデプロイ**
-→ [02_runtime](02_runtime/README_ja.md) → [03_memory](03_memory/README_ja.md) → [05_observability](05_observability/README_ja.md)の順序で
+→ [02_runtime](02_runtime/README_ja.md) → [03_memory](03_memory/README_ja.md) → [04_observability](04_observability/README_ja.md)の順序で
 
 **エンタープライズセキュリティ**
 → [06_identity](06_identity/README_ja.md) → [07_gateway](07_gateway/README_ja.md)に焦点を当てる
 
 **高度なAI機能**
-→ [01_code_interpreter](01_code_interpreter/README_ja.md) → [03_memory](03_memory/README_ja.md) → [05_observability](05_observability/README_ja.md)を探求
+→ [01_code_interpreter](01_code_interpreter/README_ja.md) → [03_memory](03_memory/README_ja.md) → [04_observability](04_observability/README_ja.md)を探求
 
 ## 前提条件
 

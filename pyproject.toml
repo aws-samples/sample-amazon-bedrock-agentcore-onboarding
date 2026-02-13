@@ -11,6 +11,7 @@ dependencies = [
     "pip>=25.1.1",
     "ruff>=0.12.4",
     "strands-agents>=1.0.1",
+    "strands-agents-evals>=0.1.6",
     "strands-agents-tools>=0.2.1",
 ]
 

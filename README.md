@@ -52,11 +52,11 @@ sample-amazon-bedrock-agentcore-onboarding/
 │   ├── README.md                 # 📖 Memory integration hands-on guide
 │   └── test_memory.py            # Memory-enhanced agent implementation
 │
-├── 04_evaluation/                # Quality assurance (coming soon)
-│
-├── 05_observability/             # Monitoring and debugging
+├── 04_observability/             # Monitoring and debugging
 │   ├── README.md                 # 📖 Observability setup hands-on guide
 │   └── test_observability.py     # Invoke runtime several times for observability
+│
+├── 05_evaluation/                # Quality assurance (coming soon)
 │
 │  # Extension - Connect to the outside world
 ├── 06_identity/                  # OAuth 2.0 authentication
@@ -106,14 +106,14 @@ sample-amazon-bedrock-agentcore-onboarding/
    - Create personalized, adaptive agent experiences
    - **Time**: ~15 minutes | **Difficulty**: Advanced
 
-4. **Evaluation** *(coming soon)* - Ensure agent quality
-   - Test agent performance with 13 built-in evaluators
-   - Create custom model-based scoring systems
-
-5. **[Observability](05_observability/README.md)** - Monitor and debug production agents
+4. **[Observability](04_observability/README.md)** - Monitor and debug production agents
    - Enable CloudWatch integration for comprehensive monitoring
    - Check tracing, metrics, and debugging capabilities
    - **Time**: ~15 minutes | **Difficulty**: Beginner
+
+5. **Evaluation** *(coming soon)* - Ensure agent quality
+   - Test agent performance with 13 built-in evaluators
+   - Create custom model-based scoring systems
 
 ### 🔗 Extension - Connect to the outside world
 
@@ -148,13 +148,13 @@ sample-amazon-bedrock-agentcore-onboarding/
 → Start with [01_code_interpreter](01_code_interpreter/README.md)
 
 **Production Deployment**
-→ Follow [02_runtime](02_runtime/README.md) → [03_memory](03_memory/README.md) → [05_observability](05_observability/README.md)
+→ Follow [02_runtime](02_runtime/README.md) → [03_memory](03_memory/README.md) → [04_observability](04_observability/README.md)
 
 **Enterprise Security**
 → Focus on [06_identity](06_identity/README.md) → [07_gateway](07_gateway/README.md)
 
 **Advanced AI Capabilities**
-→ [01_code_interpreter](01_code_interpreter/README.md) → [03_memory](03_memory/README.md) → [05_observability](05_observability/README.md)
+→ [01_code_interpreter](01_code_interpreter/README.md) → [03_memory](03_memory/README.md) → [04_observability](04_observability/README.md)
 
 ## Prerequisites
 

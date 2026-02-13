@@ -1,52 +1,23 @@
 {
   "mcpServers": {
-    "AWS Core MCP Server": {
+    "aws-mcp": {
       "command": "uvx",
-      "timeout": 60000,
+      "timeout": 100000,
+      "transport": "stdio",
       "args": [
-        "awslabs.core-mcp-server@latest"
-      ],
-      "env": {
-        "FASTMCP_LOG_LEVEL": "ERROR"
-      }
+        "mcp-proxy-for-aws@latest",
+        "https://aws-mcp.us-east-1.api.aws/mcp",
+        "--metadata", "AWS_REGION=us-east-1"
+      ]
     },
-    "AWS Documentation MCP Server": {
-      "command": "uvx",
-      "timeout": 60000,
-      "args": [
-        "awslabs.aws-documentation-mcp-server@latest"
-      ],
-      "env": {
-        "FASTMCP_LOG_LEVEL": "ERROR",
-        "AWS_DOCUMENTATION_PARTITION": "aws"
-      }
-    },
-    "awslabs.aws-diagram-mcp-server": {
-      "command": "uvx",
-      "args": ["awslabs.aws-diagram-mcp-server"],
-      "env": {
-        "FASTMCP_LOG_LEVEL": "ERROR"
-      },
-      "autoApprove": [],
+    "aws-knowledge-mcp-server": {
+      "url": "https://knowledge-mcp.global.api.aws",
+      "type": "http",
       "disabled": false
     },
     "strands": {
       "command": "uvx",
       "args": ["strands-agents-mcp-server"]
-    },
-    "awslabs.aws-serverless-mcp-server": {
-      "command": "uvx",
-      "args": [
-        "awslabs.aws-serverless-mcp-server@latest",
-        "--allow-write",
-        "--allow-sensitive-data-access"
-      ],
-      "env": {
-          "AWS_PROFILE": "default",
-          "AWS_REGION": "us-east-1"
-        },
-      "disabled": false,
-      "autoApprove": []
     }
   }
 }

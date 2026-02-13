@@ -1,9 +1,9 @@
 """
 Test Cedar-based policy enforcement on AgentCore Gateway.
 
-Demonstrates role-based access control:
-- Manager: has email-send scope -> can estimate costs AND send emails
-- Developer: no email-send scope -> can estimate costs but email is DENIED by policy
+Demonstrates principal-based access control:
+- Manager: principal matches Cedar permit -> can estimate costs AND send emails
+- Developer: no matching permit -> email tool is hidden by policy (default-deny)
 
 Usage:
     uv run python 08_policy/test_policy.py --role manager --address you@example.com
@@ -126,6 +126,34 @@ def run_agent_with_role(role: str, architecture: str, address: str, console: Con
         tool_names = [t.tool_name for t in tools]
         logger.info("Available tools: %s", tool_names)
 
+        # Show policy effect: which tools are visible to this role?
+        # With ENFORCE mode, unauthorized tools are hidden from the list
+        has_email = any("markdown_to_email" in name for name in tool_names)
+        local_tools = [n for n in tool_names if "___" not in n]
+        gateway_tools = [n for n in tool_names if "___" in n]
+
+        tool_list = "\n".join(f"  [green]✓[/green] {n}" for n in local_tools)
+        if gateway_tools:
+            tool_list += "\n" + "\n".join(
+                f"  [green]✓[/green] {n}" for n in gateway_tools
+            )
+        else:
+            tool_list += (
+                "\n  [yellow]✗ markdown_to_email — hidden by Cedar policy[/yellow]"
+            )
+
+        if has_email:
+            verdict = "[green bold]PERMITTED[/green bold] — Cedar policy matches this principal"
+        else:
+            verdict = "[yellow bold]DEFAULT-DENY[/yellow bold] — no matching permit for this principal"
+
+        console.print(Panel(
+            f"[bold]Tools visible to {role.upper()}:[/bold]\n"
+            f"{tool_list}\n\n"
+            f"[bold]Policy decision:[/bold] {verdict}",
+            title=f"Policy Effect: {role.upper()}",
+        ))
+
         agent = Agent(
             system_prompt=(
                 "You are a professional solution architect. Please estimate cost of AWS platform."
@@ -139,27 +167,12 @@ def run_agent_with_role(role: str, architecture: str, address: str, console: Con
         prompt = f"requirements: {architecture}, address: {address}"
         logger.info("Sending prompt to agent...")
 
-        try:
-            result = agent(prompt)
-            console.print(Panel(
-                f"[green]Agent completed successfully for {role.upper()}[/green]",
-                title="Result",
-            ))
-            return result
-        except Exception as e:
-            error_msg = str(e)
-            if "denied" in error_msg.lower() or "not authorized" in error_msg.lower():
-                console.print(Panel(
-                    f"[red]POLICY DENIED: {role.upper()} was blocked from sending email[/red]\n"
-                    f"[dim]{error_msg}[/dim]",
-                    title="Policy Enforcement",
-                ))
-            else:
-                console.print(Panel(
-                    f"[red]Error for {role.upper()}: {error_msg}[/red]",
-                    title="Error",
-                ))
-            raise
+        result = agent(prompt)
+        console.print(Panel(
+            f"[green]Agent completed successfully for {role.upper()}[/green]",
+            title="Result",
+        ))
+        return result
 
 
 def main():
@@ -196,15 +209,7 @@ def main():
     for role in roles:
         console.print()
         console.rule(f"Testing {role.upper()} role")
-        try:
-            run_agent_with_role(role, args.architecture, args.address, console)
-        except Exception:
-            if role == "developer":
-                logger.info(
-                    "Expected: Developer was denied email access by Cedar policy"
-                )
-            else:
-                logger.error("Unexpected error for %s role", role)
+        run_agent_with_role(role, args.architecture, args.address, console)
         console.print()
 
 

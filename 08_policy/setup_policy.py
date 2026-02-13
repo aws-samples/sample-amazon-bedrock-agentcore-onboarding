@@ -2,10 +2,9 @@
 Setup Cedar-based policy for fine-grained tool access control on AgentCore Gateway.
 
 This script creates:
-1. Cognito resource server with custom scope for email sending
-2. Two M2M app clients (Manager with email scope, Developer without)
-3. Policy Engine with Cedar policy restricting email tool to authorized scopes
-4. Attaches the policy engine to the existing gateway
+1. Two M2M app clients (Manager and Developer) with the same invoke scope
+2. Policy Engine with Cedar policy permitting email tool only for the Manager's principal
+3. Attaches the policy engine to the existing gateway
 
 Prerequisites:
 - 06_identity setup complete (inbound_authorizer.json exists)
@@ -38,11 +37,7 @@ GATEWAY_FILE = Path("../07_gateway/outbound_gateway.json")
 CONFIG_FILE = Path("policy_config.json")
 
 POLICY_ENGINE_NAME = "cost_estimator_policy_engine"
-POLICY_NAME = "email_scope_policy"
-RESOURCE_SERVER_IDENTIFIER = "cost-estimator"
-RESOURCE_SERVER_NAME = "CostEstimatorScopes"
-EMAIL_SCOPE_NAME = "email-send"
-EMAIL_SCOPE_DESCRIPTION = "Permission to send cost estimation emails"
+POLICY_NAME = "email_principal_policy"
 
 
 def load_config() -> dict:
@@ -86,10 +81,12 @@ def load_prerequisite_configs() -> tuple[dict, dict]:
 def setup_cognito_clients(
     identity_config: dict, gateway_config: dict, force: bool = False
 ) -> dict:
-    """Create Cognito resource server and two M2M app clients.
+    """Create two M2M app clients with the same invoke scope.
 
-    - Manager: has invoke scope + email-send scope
-    - Developer: has invoke scope only (no email-send)
+    Both clients get identical scopes. The Cedar policy distinguishes them
+    by principal (client ID), not by scope.
+    - Manager: permitted by Cedar policy to use markdown_to_email
+    - Developer: no matching permit, so email tool is hidden by default-deny
     """
     config = load_config()
     if "cognito_clients" in config and not force:
@@ -99,7 +96,7 @@ def setup_cognito_clients(
     user_pool_id = identity_config["cognito"]["user_pool_id"]
     token_endpoint = identity_config["cognito"]["token_endpoint"]
     original_client_id = identity_config["cognito"]["client_id"]
-    # The existing scope from step 06 (used for runtime invoke)
+    # The existing scope from step 06 (used for gateway invoke)
     existing_scope = identity_config["cognito"]["scope"]
 
     cognito = boto3.client("cognito-idp")
@@ -109,59 +106,37 @@ def setup_cognito_clients(
         logger.info("Cleaning up existing Cognito resources...")
         _cleanup_cognito_clients(cognito, config["cognito_clients"])
 
-    # Step 1: Create resource server with custom email-send scope
-    logger.info("Creating Cognito resource server with email-send scope...")
-    try:
-        cognito.create_resource_server(
-            UserPoolId=user_pool_id,
-            Identifier=RESOURCE_SERVER_IDENTIFIER,
-            Name=RESOURCE_SERVER_NAME,
-            Scopes=[
-                {
-                    "ScopeName": EMAIL_SCOPE_NAME,
-                    "ScopeDescription": EMAIL_SCOPE_DESCRIPTION,
-                }
-            ],
-        )
-        logger.info("Resource server created: %s", RESOURCE_SERVER_IDENTIFIER)
-    except cognito.exceptions.ClientError as e:
-        if "already exists" in str(e).lower():
-            logger.info("Resource server already exists, continuing...")
-        else:
-            raise
+    # Both clients get the same invoke scope.
+    # Access control is handled by Cedar principal matching, not scopes.
+    client_scopes = [existing_scope]
 
-    email_scope = f"{RESOURCE_SERVER_IDENTIFIER}/{EMAIL_SCOPE_NAME}"
-
-    # Step 2: Create Manager app client (invoke + email-send)
+    # Step 1: Create Manager app client
     logger.info("Creating Manager app client...")
-    manager_scopes = [existing_scope, email_scope]
     manager_response = cognito.create_user_pool_client(
         UserPoolId=user_pool_id,
         ClientName="CostEstimatorManager",
         GenerateSecret=True,
         AllowedOAuthFlows=["client_credentials"],
-        AllowedOAuthScopes=manager_scopes,
+        AllowedOAuthScopes=client_scopes,
         AllowedOAuthFlowsUserPoolClient=True,
     )
     manager_client = manager_response["UserPoolClient"]
     logger.info("Manager client created: %s", manager_client["ClientId"])
 
-    # Step 3: Create Developer app client (invoke only, no email-send)
+    # Step 2: Create Developer app client
     logger.info("Creating Developer app client...")
-    developer_scopes = [existing_scope]
     developer_response = cognito.create_user_pool_client(
         UserPoolId=user_pool_id,
         ClientName="CostEstimatorDeveloper",
         GenerateSecret=True,
         AllowedOAuthFlows=["client_credentials"],
-        AllowedOAuthScopes=developer_scopes,
+        AllowedOAuthScopes=client_scopes,
         AllowedOAuthFlowsUserPoolClient=True,
     )
     developer_client = developer_response["UserPoolClient"]
     logger.info("Developer client created: %s", developer_client["ClientId"])
 
     cognito_config = {
-        "resource_server_identifier": RESOURCE_SERVER_IDENTIFIER,
         "user_pool_id": user_pool_id,
         "token_endpoint": token_endpoint,
         "original_client_id": original_client_id,
@@ -169,12 +144,12 @@ def setup_cognito_clients(
         "manager": {
             "client_id": manager_client["ClientId"],
             "client_secret": manager_client["ClientSecret"],
-            "scopes": " ".join(manager_scopes),
+            "scopes": " ".join(client_scopes),
         },
         "developer": {
             "client_id": developer_client["ClientId"],
             "client_secret": developer_client["ClientSecret"],
-            "scopes": " ".join(developer_scopes),
+            "scopes": " ".join(client_scopes),
         },
     }
     save_config({"cognito_clients": cognito_config})
@@ -384,7 +359,7 @@ def attach_policy_to_gateway() -> None:
 
 
 def _cleanup_cognito_clients(cognito, cognito_config: dict) -> None:
-    """Clean up Cognito resources created by this step."""
+    """Clean up Cognito app clients created by this step."""
     user_pool_id = cognito_config.get("user_pool_id")
     if not user_pool_id:
         return
@@ -399,17 +374,6 @@ def _cleanup_cognito_clients(cognito, cognito_config: dict) -> None:
                 logger.info("Deleted %s client: %s", role, client_id)
             except Exception as e:
                 logger.warning("Failed to delete %s client: %s", role, e)
-
-    try:
-        cognito.delete_resource_server(
-            UserPoolId=user_pool_id,
-            Identifier=cognito_config.get(
-                "resource_server_identifier", RESOURCE_SERVER_IDENTIFIER
-            ),
-        )
-        logger.info("Deleted resource server")
-    except Exception as e:
-        logger.warning("Failed to delete resource server: %s", e)
 
 
 def main():

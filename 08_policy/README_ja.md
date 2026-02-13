@@ -39,12 +39,12 @@ Cedarポリシーは複数の次元でツールアクセスを制限できます
 
 | 制限の種類 | Cedar式 | 例 |
 |:---|:---|:---|
+| **プリンシパル別** | `principal == AgentCore::OAuthUser::"<client_id>"` | 特定のOAuthクライアントのみツール使用可能 |
 | **OAuthスコープ別** | `principal.getTag("scope") like "*email-send*"` | `email-send`スコープを持つクライアントのみメール送信可能 |
 | **ユーザーID別** | `principal.getTag("username") == "john"` | 特定のユーザーのみ機密ツールにアクセス可能 |
 | **ロール別** | `principal.getTag("role") == "manager"` | マネージャーのみ取引を承認可能 |
 | **ツール入力別** | `context.input.amount < 500` | 返金額を$500未満に制限 |
 | **ツール入力（文字列）** | `context.input.region == "US"` | 特定の地域でのみ操作を許可 |
-| **ツール入力（集合）** | `["US","CA"].contains(context.input.country)` | 許可された国に制限 |
 | **組み合わせ** | `condition1 && condition2` | 複数条件の組み合わせ |
 
 Cedarには2つの効果があります：
@@ -55,18 +55,36 @@ Cedarには2つの効果があります：
 
 ### M2M認証とPolicyの連携
 
-このワークショップでは、Cognitoの `client_credentials` フローによる **M2M（Machine-to-Machine）OAuth** を使用しています。ここで重要な問いが生じます：*M2Mトークンでロールベースのポリシーを適用できるか？*
+このワークショップでは、Cognitoの `client_credentials` フローによる **M2M（Machine-to-Machine）OAuth** を使用し、「Manager」用と「Developer」用の2つのアプリクライアントを作成します。CedarポリシーでManagerのクライアントIDにのみメールツールの使用を許可します。
 
-**M2Mトークンにはユーザーアイデンティティが含まれません**（`username` も `role` クレームもない）— アプリケーションを表すものであり、個人を表すものではありません。しかし、M2Mトークンには **OAuthスコープが含まれ**、スコープはOAuthクライアントごとに異なる設定が可能です。これを活用します：
+> **注意: これはワークショップの簡略化です。** 本番環境では、M2Mの `client_credentials` は通常、**サービス間**通信に使用され、各*ロール*ではなく各*サービス*が独自のクライアントIDを持ちます。個人ユーザーのロールベースアクセス制御には通常 **Authorization Code** フローを使用し、各ユーザーのJWTに `username`、`role`、`scope` などのクレームを含めてCedarで評価します。ここでは2クライアント方式を採用していますが、これはログインUIやユーザー管理のセットアップなしにCedarのprincipalマッチングとデフォルト拒否の動作を実演するためです。
+
+`client_credentials` フローでは、各アプリクライアントが一意の **クライアントID** を持ち、これがJWTの `sub` クレームとしてCedarの **principal** になります：
 
 ```
-Managerアプリクライアント   →  スコープ付きトークン: [invoke, email-send]
-Developerアプリクライアント →  スコープ付きトークン: [invoke]
+Managerアプリクライアント   →  client_id: "7uhj6fu45r..."  →  principal: AgentCore::OAuthUser::"7uhj6fu45r..."
+Developerアプリクライアント →  client_id: "50q0p06bq3..."  →  principal: AgentCore::OAuthUser::"50q0p06bq3..."
 ```
 
-Cedarポリシーは `scope` クレームをチェックしてメールツールの許可を判断します。これにより、異なるスコープセットを持つ別々のOAuthクライアントとして「ロール」を効果的にモデル化しています。
+Cedarポリシーは `principal == AgentCore::OAuthUser::"<manager_client_id>"` でManagerのみにメールツールの使用を許可します。Developerのクライアントに対する `permit` ポリシーがないため、デフォルト拒否により自動的にブロックされます。
 
-> **注意**: ユーザー個人ごとのポリシー（例：「Johnは許可するがJaneは拒否する」）には、Client Credentialsの代わりに **Authorization Code** フローを使用し、各ユーザーのJWTに個別のクレーム（`username`、`role`など）を含める必要があります。ここで使用しているスコープベースのアプローチは、M2Mシナリオでチームやサービス単位のアクセス制御を行う標準的なパターンです。
+> **本番環境: スコープベースまたはロールベースのマッチング**
+>
+> ユーザー向けOAuth（Authorization Codeフロー）では、Cedar `when` 句でJWTクレームを評価し、より柔軟なアクセス制御が可能です：
+> ```cedar
+> // スコープベース: email-sendスコープを持つすべてのユーザーを許可
+> when {
+>   principal.hasTag("scope") &&
+>   principal.getTag("scope") like "*email-send*"
+> };
+>
+> // ロールベース: マネージャーのみ許可
+> when {
+>   principal.hasTag("role") &&
+>   principal.getTag("role") == "manager"
+> };
+> ```
+> これらのパターンはポリシーを特定のクライアントIDから切り離し、本番環境で推奨されるアプローチです。Cedar `when` 句では、ユーザーID（`principal.getTag("username")`）やツール入力パラメータ（`context.input.amount < 500`）による制限も可能です。詳細は[一般的なポリシーパターン](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/policy-common-patterns.html)と[ポリシー例](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/example-policies.html)を参照してください。
 
 ## プロセス概要
 
@@ -78,18 +96,19 @@ sequenceDiagram
     participant Tool as markdown_to_email
     participant CE as cost_estimator
 
-    M->>GW: リクエスト（email-sendスコープ付きトークン）
-    GW->>GW: Cedar: スコープ一致 → 許可
+    M->>GW: リクエスト（ManagerのクライアントIDがJWT subに含まれる）
+    GW->>GW: Cedar: principalがManagerに一致 → 許可
+    Note over GW: ツール一覧: [cost_estimator, markdown_to_email]
     GW->>CE: コスト見積もり
     CE-->>GW: コストレポート
     GW->>Tool: メール送信
     Tool-->>M: メール送信完了 ✓
 
-    D->>GW: リクエスト（email-sendスコープなしトークン）
-    GW->>GW: Cedar: スコープ不一致 → 拒否
+    D->>GW: リクエスト（DeveloperのクライアントIDがJWT subに含まれる）
+    GW->>GW: Cedar: 一致するpermitなし → デフォルト拒否
+    Note over GW: ツール一覧: [cost_estimator]（メールツール非表示）
     GW->>CE: コスト見積もり
-    CE-->>D: コストレポート
-    GW--xD: メール送信はポリシーにより拒否 ✗
+    CE-->>D: コストレポートのみ（エージェントはメールツールを認識しない）
 ```
 
 ## 前提条件
@@ -122,15 +141,12 @@ uv run python 08_policy/setup_policy.py
 
 以下を実行します：
 
-1. **Cognitoリソースサーバーを作成** — `email-send`カスタムスコープ付き
-2. **2つのM2Mアプリクライアントを作成**:
-   - Managerクライアント — `invoke` と `email-send` の両スコープを持つ
-   - Developerクライアント — `invoke` スコープのみ
-3. **Gatewayの`allowedClients`を更新** — 両方の新クライアントのトークンを受け入れるように
-4. **Policy Engineを作成** — Cedarポリシーのコンテナ
-5. **NL2Cedarのデモ** — `StartPolicyGeneration` を使用して自然言語からCedarポリシーを生成
-6. **Cedarポリシーを作成** — `markdown_to_email` を `email-send` スコープ持ちのトークンに制限
-7. **Policy EngineをGatewayにアタッチ** — `ENFORCE` モードで
+1. **2つのM2Mアプリクライアントを作成** — ManagerとDeveloper、同じ `invoke` スコープ
+2. **Gatewayの`allowedClients`を更新** — 両方の新クライアントのトークンを受け入れるように
+3. **Policy Engineを作成** — Cedarポリシーのコンテナ
+4. **NL2Cedarのデモ** — `StartPolicyGeneration` を使用して自然言語からCedarポリシーを生成
+5. **Cedarポリシーを作成** — `markdown_to_email` をManagerのクライアントIDにのみ許可
+6. **Policy EngineをGatewayにアタッチ** — `ENFORCE` モードで
 
 ### ステップ2: Developerとしてテスト（メール拒否）
 
@@ -138,7 +154,7 @@ uv run python 08_policy/setup_policy.py
 uv run python 08_policy/test_policy.py --role developer --address you@example.com
 ```
 
-Developerのトークンには `email-send` スコープが含まれていません。Cedarポリシーは一致する `permit` を見つけられず、**デフォルト拒否** により `markdown_to_email` ツールがツール一覧に **表示されません**。エージェントはコスト見積もりを行いますが、メールは送信できません。ログ出力のツール一覧を比較してください — `markdown_to_email` がポリシーによりフィルタリングされています。
+DeveloperのトークンにはManagerとは異なる `sub`（クライアントID）が含まれています。CedarポリシーにはDeveloperのprincipalに一致する `permit` がないため、**デフォルト拒否** により `markdown_to_email` ツールがツール一覧に **表示されません**。エージェントはコスト見積もりを行いますが、メールは送信できません。ログ出力のツール一覧を比較してください — `markdown_to_email` がポリシーによりフィルタリングされています。
 
 ### ステップ3: Managerとしてテスト（メール許可）
 
@@ -146,7 +162,7 @@ Developerのトークンには `email-send` スコープが含まれていませ
 uv run python 08_policy/test_policy.py --role manager --address you@example.com
 ```
 
-Managerのトークンには `email-send` スコープが含まれています。Cedarポリシーがスコープクレームを評価し、一致を検出して `markdown_to_email` ツール呼び出しを **許可** します。エージェントはコストを見積もり、クライアントにメールを送信します。
+ManagerのトークンにはCedarポリシーが明示的に許可するクライアントIDが含まれています。ポリシーが `principal` の一致を検出し、`markdown_to_email` ツール呼び出しを **許可** します。エージェントはコストを見積もり、クライアントにメールを送信します。
 
 ### ステップ4: クリーンアップ
 
@@ -156,23 +172,19 @@ uv run python 08_policy/clean_resources.py
 
 ## 主要な実装の詳細
 
-### Cedarポリシー: スコープベースのツールアクセス
+### Cedarポリシー: プリンシパルベースのツールアクセス
 
 ```cedar
 permit(
-  principal is AgentCore::OAuthUser,
-  action == AgentCore::Action::"AWSCostEstimatorGatewayTarget__markdown_to_email",
-  resource == AgentCore::Gateway::"arn:aws:bedrock-agentcore:..."
-)
-when {
-  principal.hasTag("scope") &&
-  principal.getTag("scope") like "*email-send*"
-};
+  principal == AgentCore::OAuthUser::"<manager_client_id>",
+  action == AgentCore::Action::"AWSCostEstimatorGatewayTarget___markdown_to_email",
+  resource == AgentCore::Gateway::"arn:aws:bedrock-agentcore:...:gateway/..."
+);
 ```
 
-このポリシーの意味：「OAuthユーザーがこのGatewayの `markdown_to_email` ツールを呼び出すことを許可する。**ただし**、トークンのスコープに `email-send` が含まれている場合のみ。」
+このポリシーの意味：「Managerアプリケーション（OAuthクライアントIDで識別）がこのGatewayの `markdown_to_email` ツールを呼び出すことを許可する。」
 
-`email-send` スコープを持たないユーザー向けの `permit` ポリシーがないため、デフォルト拒否の動作により自動的にブロックされます。
+`setup_policy.py` スクリプトがManagerの実際のクライアントIDを自動的にポリシーに挿入します。DeveloperのクライアントIDに対する `permit` ポリシーがないため、デフォルト拒否の動作により自動的にブロックされ、メールツールはDeveloperのツール一覧に表示されません。
 
 ### NL2Cedar: 自然言語からポリシー生成
 

@@ -6,8 +6,7 @@ Cleanup order:
 2. Restore gateway's allowedClients to original (step-06 client only)
 3. Delete all policies, then the policy engine
 4. Delete Cognito app clients (manager, developer)
-5. Delete Cognito resource server
-6. Remove policy_config.json
+5. Remove policy_config.json
 
 Usage:
     uv run python 08_policy/clean_resources.py
@@ -15,6 +14,7 @@ Usage:
 
 import json
 import os
+import time
 from pathlib import Path
 
 import boto3
@@ -66,12 +66,21 @@ def clean_resources():
             print(f"Warning: Failed to detach policy engine: {e}")
 
     # Step 2: Restore gateway's allowedClients to original
+    # Wait for gateway to finish updating after detach (step 1)
     cognito_clients = config.get("cognito_clients", {})
     original_client_id = cognito_clients.get("original_client_id")
     if original_client_id and GATEWAY_CONFIG_FILE.exists():
         with GATEWAY_CONFIG_FILE.open("r") as f:
             gw_config = json.load(f)
         gateway_id = gw_config["gateway"]["id"]
+        print("Waiting for gateway to be ready...")
+        for _ in range(12):
+            gw_status = control_client.get_gateway(
+                gatewayIdentifier=gateway_id
+            ).get("status")
+            if gw_status == "READY":
+                break
+            time.sleep(5)
         print("Restoring gateway allowedClients to original client only...")
         try:
             gateway = control_client.get_gateway(gatewayIdentifier=gateway_id)
@@ -133,19 +142,7 @@ def clean_resources():
                 except Exception as e:
                     print(f"Warning: Failed to delete {role} client: {e}")
 
-        # Step 5: Delete Cognito resource server
-        rs_id = cognito_clients.get("resource_server_identifier")
-        if rs_id:
-            print(f"Deleting resource server: {rs_id}")
-            try:
-                cognito.delete_resource_server(
-                    UserPoolId=user_pool_id, Identifier=rs_id
-                )
-                print("Resource server deleted")
-            except Exception as e:
-                print(f"Warning: Failed to delete resource server: {e}")
-
-    # Step 6: Remove config file
+    # Step 5: Remove config file
     print("Removing policy_config.json")
     os.remove(POLICY_CONFIG_FILE)
     print("Cleanup complete")

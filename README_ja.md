@@ -269,7 +269,7 @@ uv run python clean_resources.py
 ### サポートリソース
 - [Amazon Bedrock AgentCore開発者ガイド](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/)
 - アカウント固有の問題については[AWSサポート](https://aws.amazon.com/support/)
-- プロジェクト固有の質問については[GitHub Issues](../../issues)
+- プロジェクト固有の質問については[GitHub Issues](https://github.com/aws-samples/sample-amazon-bedrock-agentcore-onboarding/issues)
 
 ## コントリビューション
 
@@ -280,7 +280,7 @@ uv run python clean_resources.py
 3. **シンプルで洗練された** - 機能性を維持しながら明確さを保つ
 4. **意味のある構造** - 説明的な名前と論理的な構成を使用
 
-詳細なガイドラインについては、[実装原則](.amazonq/rules/principle.md)をご覧ください。
+詳細なガイドラインについては、[CONTRIBUTING](CONTRIBUTING.md)をご覧ください。
 
 ## ライセンス
 

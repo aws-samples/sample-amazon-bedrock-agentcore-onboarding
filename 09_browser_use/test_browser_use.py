@@ -340,6 +340,9 @@ def main():
 
     args = parser.parse_args()
     region = args.region or boto3.Session().region_name
+    if not region:
+        logger.error("AWS region not configured. Set AWS_DEFAULT_REGION or use --region.")
+        sys.exit(1)
 
     # Step 1: Run cost estimation
     estimation_text = run_cost_estimation(args.architecture, region)

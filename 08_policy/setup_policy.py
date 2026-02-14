@@ -182,11 +182,11 @@ def update_gateway_allowed_clients(
     jwt_config = current_auth.get("customJWTAuthorizer", {})
     current_clients = jwt_config.get("allowedClients", [])
 
-    # Add new client IDs
-    new_clients = list(set(current_clients + [
-        cognito_config["manager"]["client_id"],
-        cognito_config["developer"]["client_id"],
-    ]))
+    # Add new client IDs (preserve existing order, append missing ones)
+    new_clients = list(current_clients)
+    for cid in [cognito_config["manager"]["client_id"], cognito_config["developer"]["client_id"]]:
+        if cid not in new_clients:
+            new_clients.append(cid)
 
     logger.info("Updating gateway allowedClients: %d -> %d clients",
                 len(current_clients), len(new_clients))

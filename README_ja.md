@@ -203,47 +203,33 @@ aws sts get-caller-identity
 
 ### 🧹 **重要：AWSリソースのクリーンアップ**
 
-ハンズオン演習完了後は、継続的な課金を避けるためにリソースをクリーンアップしてください。**依存関係のため、逆順（09→01）でクリーンアップしてください**：
+ハンズオン演習完了後は、継続的な課金を避けるためにリソースをクリーンアップしてください。**依存関係のため、逆順（09→02）でクリーンアップしてください**：
 
 ```bash
-# 1. Gatewayリソースをクリーンアップ（SAM CLIを使用）
+# 1. アクティブなブラウザセッションを停止
+uv run python 09_browser_use/clean_resources.py
+
+# 2. ポリシーエンジンとCognitoリソースを削除
+uv run python 08_policy/clean_resources.py
+
+# 3. Gatewayリソースをクリーンアップ（SAM CLIを使用）
 cd 07_gateway
 sam delete  # Lambda関数と関連リソースを削除
-uv run python clean_resources.py  # 必要に応じて追加のクリーンアップ
-
-# 2. Identityリソースをクリーンアップ
-cd 06_identity
 uv run python clean_resources.py
+cd ..
 
-# 3. Memoryリソースをクリーンアップ
-cd 03_memory
-uv run python clean_resources.py
+# 4. Identityリソースをクリーンアップ
+uv run python 06_identity/clean_resources.py
 
-# 4. Runtimeリソースをクリーンアップ
-cd 02_runtime
-uv run python clean_resources.py
+# 5. 評価設定を削除
+uv run python 05_evaluation/clean_resources.py
 
-# 5. 最後にCode Interpreterリソースをクリーンアップ
-cd 01_code_interpreter
-uv run python clean_resources.py
+# 6. Memoryリソースをクリーンアップ
+uv run python 03_memory/clean_resources.py
+
+# 7. Runtimeリソースをクリーンアップ
+uv run python 02_runtime/clean_resources.py
 ```
-
-### 🔍 **クリーンアップされるもの**
-
-- **Gateway (07)**: Lambda関数（`sam delete`経由）、API Gatewayリソース、デプロイアーティファクト
-- **Identity (06)**: Cognitoユーザープール、OAuthクライアント、認証設定
-- **Observability (05)**: クリーンアップスクリプト不要 - CloudWatchログは自動的に期限切れ
-- **Memory (03)**: メモリストア、会話履歴、永続データ
-- **Runtime (02)**: デプロイされたエージェント、ランタイム設定、関連S3オブジェクト
-- **Code Interpreter (01)**: アクティブなセッションと一時リソース
-
-### ⚠️ **依存関係の順序が重要**
-
-**逆順（09→01）**でクリーンアップする理由：
-- Policy/Browser UseがGatewayエンドポイントに依存している可能性
-- Gateway関数がIdentity認証を使用している可能性
-- Identity設定がRuntimeエージェントによって参照されている可能性
-- RuntimeエージェントがMemoryやCode Interpreterセッションを使用している可能性
 
 ### 💡 **ベストプラクティス**
 

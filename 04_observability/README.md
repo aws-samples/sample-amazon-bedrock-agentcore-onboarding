@@ -168,4 +168,4 @@ Access via: [CloudWatch GenAI Observability](https://console.aws.amazon.com/clou
 
 ---
 
-**Next Steps**: Enable observability in your AgentCore applications to gain comprehensive insights into agent performance, troubleshoot issues effectively, and optimize production deployments. Continue with [06_memory](../06_memory/README.md) to add context-aware capabilities to your agents.
+**Next Steps**: Enable observability in your AgentCore applications to gain comprehensive insights into agent performance, troubleshoot issues effectively, and optimize production deployments. Continue with [05_evaluation](../05_evaluation/README.md) to add quality assurance for your agents, or proceed to [06_identity](../06_identity/README.md) to add OAuth 2.0 authentication for secure external operations.

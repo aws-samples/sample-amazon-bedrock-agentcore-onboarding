@@ -10,12 +10,21 @@ Amazon Bedrock AgentCore is a comprehensive platform for building, deploying, an
 
 ### What You'll Learn
 
+**Foundation (01–05)** — Build a reliable agent
 - **Code Interpreter**: Secure sandboxed execution for dynamic calculations and data processing
-- **Runtime**: Scalable agent deployment and management in AWS cloud infrastructure  
-- **Gateway**: API gateway integration with authentication and MCP protocol support
-- **Identity**: OAuth 2.0 authentication and secure token management for agent operations
-- **Observability**: Comprehensive monitoring, tracing, and debugging with CloudWatch integration
+- **Runtime**: Scalable agent deployment and management in AWS cloud infrastructure
 - **Memory**: Short-term and long-term memory capabilities for context-aware agent interactions
+- **Observability**: Comprehensive monitoring, tracing, and debugging with CloudWatch integration
+- **Evaluation**: Quality assurance with built-in and custom evaluators
+
+**Extension (06–09)** — Connect to external systems to enhance capability
+- **Identity**: OAuth 2.0 authentication and secure token management for agent operations
+- **Gateway**: API gateway integration with authentication and MCP protocol support
+- **Policy**: Fine-grained access control for agent-to-tool interactions with Cedar
+- **Browser Use**: Web automation for form-only systems with managed browser sessions
+
+**Appendix** — Build your own
+- **Custom Agent**: Apply learned patterns to create agents tailored to your specific use case
 
 ### Learning Philosophy
 
@@ -26,54 +35,9 @@ Following our **Amazon Bedrock AgentCore Implementation Principle**, every examp
 - ✅ **Simple and Sophisticated** - Clear, descriptive code that minimizes learning cost while maintaining functionality
 - ✅ **Progressive Learning** - Numbered sequences that build complexity gradually from basic to advanced concepts
 
-## Directory Structure
-
-```
-sample-amazon-bedrock-agentcore-onboarding/
-├── 01_code_interpreter/          # Secure sandboxed execution
-│   ├── README.md                 # 📖 Code Interpreter hands-on guide
-│   ├── cost_estimator_agent/     # AWS cost estimation agent implementation
-│   └── test_code_interpreter.py  # Complete test suite and examples
-│
-├── 02_runtime/                   # Agent deployment and management
-│   ├── README.md                 # 📖 Runtime deployment hands-on guide
-│   ├── prepare_agent.py          # Agent preparation automation tool
-│   └── deployment/               # Packaged agent for deployment
-│
-├── 03_identity/                  # OAuth 2.0 authentication
-│   ├── README.md                 # 📖 Identity integration hands-on guide
-│   ├── setup_inbound_authorizer.py  # OAuth2 provider setup
-│   └── test_identity_agent.py    # Identity-protected agent
-│
-├── 04_gateway/                   # API gateway with authentication
-│   ├── README.md                 # 📖 Gateway integration hands-on guide
-│   ├── setup_outbound_gateway.py # Gateway deployment automation
-│   ├── src/app.py                # Lambda function implementation
-│   ├── deploy.sh                 # Lambda deployment script
-│   └── test_gateway.py           # Gateway test agent
-│
-├── 05_observability/             # Monitoring and debugging
-│   ├── README.md                 # 📖 Observability setup hands-on guide
-│   └── test_observability.py     # Invoke runtime several times for observability
-│
-├── 06_memory/                    # Context-aware interactions
-│   ├── README.md                 # 📖 Memory integration hands-on guide
-│   └── test_memory.py            # Memory-enhanced agent implementation
-│
-├── a1_custom/                    # 📚 Appendix: Build your own custom agent
-│   ├── README.md                 # 📖 Custom agent development guide
-│   ├── weather_agent/            # Example: Weather agent implementation
-│   ├── prepare_agent.py          # Deployment preparation
-│   └── test_agentcore_endpoint.py # End-to-end testing
-│
-├── pyproject.toml                # Project dependencies and configuration
-├── uv.lock                       # Dependency lock file
-└── README.md                     # This overview document
-```
-
 ## Hands-On Learning Path
 
-### 🚀 Quick Start (Recommended Order)
+### 🚀 Foundation (01–05) — Build a reliable agent
 
 1. **[Code Interpreter](01_code_interpreter/README.md)** - Start here for foundational agent development
    - Build an AWS cost estimator with secure Python execution
@@ -85,30 +49,47 @@ sample-amazon-bedrock-agentcore-onboarding/
    - Understand scalable agent deployment patterns
    - **Time**: ~15 minutes | **Difficulty**: Intermediate
 
-3. **[Identity](03_identity/README.md)** - Add OAuth 2.0 authentication for secure operations
-   - Set up Cognito OAuth provider and secure runtime
-   - Implement transparent authentication with `@requires_access_token`
-   - **Time**: ~15 minutes | **Difficulty**: Intermediate
-
-4. **[Gateway](04_gateway/README.md)** - Expose agents through MCP-compatible APIs
-   - Create outbound gateway with Lambda integration
-   - Combine local tools with remote gateway functionality
-   - **Time**: ~15 minutes | **Difficulty**: Intermediate
-
-5. **[Observability](05_observability/README.md)** - Monitor and debug production agents
-   - Enable CloudWatch integration for comprehensive monitoring
-   - Check tracing, metrics, and debugging capabilities
-   - **Time**: ~15 minutes | **Difficulty**: Beginner
-
-6. **[Memory](06_memory/README.md)** - Build context-aware, learning agents
+3. **[Memory](03_memory/README.md)** - Build context-aware, learning agents
    - Implement short-term and long-term memory capabilities
    - Create personalized, adaptive agent experiences
    - **Time**: ~15 minutes | **Difficulty**: Advanced
 
-### 📚 Appendix
+4. **[Observability](04_observability/README.md)** - Monitor and debug production agents
+   - Enable CloudWatch integration for comprehensive monitoring
+   - Check tracing, metrics, and debugging capabilities
+   - **Time**: ~15 minutes | **Difficulty**: Beginner
 
-**[A1. Custom Agent](a1_custom/README.md)** - Build your own custom agent
-   - Learn to create agents tailored to your specific use case
+5. **[Evaluation](05_evaluation/README.md)** - Ensure agent quality with an evaluation-first mindset
+   - Run local, on-demand, and online evaluation against the cost estimator
+   - Build a custom `ToolCallEvaluator` and deploy it to AgentCore
+   - **Time**: ~20 minutes | **Difficulty**: Intermediate
+
+### 🔗 Extension (06–09) — Connect to external systems to enhance capability
+
+6. **[Identity](06_identity/README.md)** - Add OAuth 2.0 authentication for secure operations
+   - Set up Cognito OAuth provider and secure runtime
+   - Implement transparent authentication with `@requires_access_token`
+   - **Time**: ~15 minutes | **Difficulty**: Intermediate
+
+7. **[Gateway](07_gateway/README.md)** - Expose agents through MCP-compatible APIs
+   - Create outbound gateway with Lambda integration
+   - Combine local tools with remote gateway functionality
+   - **Time**: ~15 minutes | **Difficulty**: Intermediate
+
+8. **[Policy](08_policy/README.md)** - Control agent-to-tool interactions with Cedar
+   - Define role-based access policies (Manager vs Developer) for Gateway tools
+   - Deploy a Cedar policy engine in ENFORCE mode
+   - **Time**: ~15 minutes | **Difficulty**: Advanced
+
+9. **[Browser Use](09_browser_use/README.md)** - Automate web-based workflows
+   - Fill and submit web forms using AgentCore Browser managed sessions
+   - Combine cost estimation with Playwright-based form automation
+   - **Time**: ~10 minutes | **Difficulty**: Intermediate
+
+### 📚 Appendix — Build your own
+
+**[A1. Custom Agent](a1_custom/README.md)** - Apply what you've learned to build your own agent
+   - Create agents tailored to your specific use case
    - Example implementation provided (weather agent)
    - **Time**: ~20 minutes | **Difficulty**: Intermediate
 
@@ -117,14 +98,14 @@ sample-amazon-bedrock-agentcore-onboarding/
 **Building Your First Agent**
 → Start with [01_code_interpreter](01_code_interpreter/README.md)
 
-**Production Deployment**
-→ Follow [02_runtime](02_runtime/README.md) → [03_identity](03_identity/README.md) → [04_gateway](04_gateway/README.md) → [05_observability](05_observability/README.md)
+**Production-Ready Agent**
+→ [02_runtime](02_runtime/README.md) → [03_memory](03_memory/README.md) → [04_observability](04_observability/README.md) → [05_evaluation](05_evaluation/README.md)
 
-**Enterprise Security**
-→ Focus on [03_identity](03_identity/README.md) → [04_gateway](04_gateway/README.md)
+**Enterprise Security & Governance**
+→ [06_identity](06_identity/README.md) → [07_gateway](07_gateway/README.md) → [08_policy](08_policy/README.md)
 
-**Advanced AI Capabilities**
-[01_code_interpreter](01_code_interpreter/README.md) → Explore [06_memory](06_memory/README.md)
+**End-to-End Automation**
+→ [01_code_interpreter](01_code_interpreter/README.md) → [07_gateway](07_gateway/README.md) → [09_browser_use](09_browser_use/README.md)
 
 ## Prerequisites
 
@@ -174,26 +155,32 @@ You can use one click environmental setup on AWS (it costs for AWS service usage
 
 ### 🧹 **Important: Clean Up AWS Resources**
 
-To avoid ongoing charges, clean up resources after completing the hands-on exercises. **Clean up in reverse order (06→01) due to dependencies**:
+To avoid ongoing charges, clean up resources after completing the hands-on exercises. **Clean up in reverse order (09→02) due to dependencies**:
 
 ```bash
-# 1. Clean up Memory resources first
-cd 06_memory
-uv run python clean_resources.py
+# 1. Stop active browser sessions
+uv run python 09_browser_use/clean_resources.py
 
-# 2. Clean up Gateway resources (uses SAM CLI)
-cd 04_gateway
+# 2. Remove policy engine and Cognito resources
+uv run python 08_policy/clean_resources.py
+
+# 3. Clean up Gateway resources (uses SAM CLI)
+cd 07_gateway
 sam delete  # Deletes Lambda function and associated resources
-uv run python clean_resources.py  # Additional cleanup if needed
-
-# 3. Clean up Identity resources
-cd 03_identity
 uv run python clean_resources.py
+cd ..
 
-# 4. Clean up Runtime resources
-cd 02_runtime
-uv run python clean_resources.py
+# 4. Clean up Identity resources
+uv run python 06_identity/clean_resources.py
 
+# 5. Remove evaluation configs
+uv run python 05_evaluation/clean_resources.py
+
+# 6. Clean up Memory resources
+uv run python 03_memory/clean_resources.py
+
+# 7. Clean up Runtime resources
+uv run python 02_runtime/clean_resources.py
 ```
 
 ## Getting Help

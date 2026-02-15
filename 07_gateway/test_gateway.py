@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "01_code_interpreter"))
 from cost_estimator_agent.cost_estimator_agent import AWSCostEstimatorAgent  # noqa: E402
 
-IDENTITY_CONFIG_FILE = Path("../03_identity/inbound_authorizer.json")
+IDENTITY_CONFIG_FILE = Path("../06_identity/inbound_authorizer.json")
 GATEWAY_CONFIG_FILE = Path("outbound_gateway.json")
 OAUTH_PROVIDER = ""
 OAUTH_SCOPE = ""

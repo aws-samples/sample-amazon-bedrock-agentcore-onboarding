@@ -17,7 +17,7 @@ logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 logger = logging.getLogger(__name__)
 
 PROVIDER_NAME = "outbound-identity-for-cost-estimator-agent"
-IDENTITY_FILE = Path("../03_identity/inbound_authorizer.json")
+IDENTITY_FILE = Path("../06_identity/inbound_authorizer.json")
 CONFIG_FILE = Path("outbound_gateway.json")
 
 
@@ -26,7 +26,7 @@ def setup_gateway(provider_name: str = PROVIDER_NAME, force: bool = False) -> di
     Setup Gateway with GitHub OAuth2 credential provider.
     
     This function:
-    1. Creates Gateway with Inbound Authorizer from 03_identity
+    1. Creates Gateway with Inbound Authorizer from 06_identity
     2. Attach AWS Lambda to Gateway as Outbound target
     3. Saves configuration to outbound_gateway.json
 

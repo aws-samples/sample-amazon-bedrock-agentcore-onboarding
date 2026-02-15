@@ -49,7 +49,7 @@ sequenceDiagram
 ### File Structure
 
 ```
-06_memory/
+03_memory/
 ├── README.md                      # This documentation
 └── test_memory.py                 # Main implementation and test suite
 ```
@@ -57,7 +57,7 @@ sequenceDiagram
 ### Step 1: Run with Existing Memory (Fast)
 
 ```bash
-cd 06_memory
+cd 03_memory
 uv run python test_memory.py
 ```
 
@@ -66,7 +66,7 @@ This will reuse existing memory for faster debugging and testing.
 ### Step 2: Force Recreation (Clean Start)
 
 ```bash
-cd 06_memory
+cd 03_memory
 uv run python test_memory.py --force
 ```
 

@@ -92,4 +92,34 @@ Before completing any code example:
 - Documentation-first approach (create README.md files first)
 - Meaningful names over conventions
 
+## Research & Investigation
+- **Official docs first**: Always check installed packages (`pip show`, source code) and official AWS documentation before web searching
+- **Verify before building**: If unsure about an API or SDK method, test it with a minimal snippet before building on it
+- **Local over remote**: Prefer reading local SDK source and existing repo patterns over fetching external pages
+
+## Working Style
+- **Implementation bias**: Don't stop at a plan file — produce working code in every session. If research is needed, timebox it (5 minutes max) then start coding with TODOs for unknowns
+- **Confirm approach early**: Before starting complex work, state your approach in 2-3 bullet points so the user can course-correct immediately
+- **Follow existing patterns**: Read 2-3 existing workshop modules before creating or modifying one
+
+## Workshop Development Conventions
+- **Template structure**: Follow the Foundation (01-05) / Extension (06-09) layer organization
+- **Sequential means ALL**: "Steps 01 through 03" means run 01, 02, AND 03 — never skip intermediate steps
+- **Diagram accuracy**: Mermaid diagrams must match actual code — verify component names and flow against the implementation
+- **Concise documentation**: Flow from general → specific. Avoid verbose explanations where a code example suffices
+- **Japanese README sync**: Whenever an English README changes, the corresponding README_ja.md must be updated using the sync-ja skill approach (translate, then refine for native-speaker fluency)
+
+## Japanese Translation Quality
+- **Never do literal translation** — literal translations produce unnatural Japanese (翻訳調) that is hard to read
+- **Two-pass approach**: First translate the meaning, then rewrite for natural Japanese flow
+- **Native-speaker fluency**: The output should read as if originally written in Japanese by a native speaker
+- **Preserve technical terms**: Keep AWS service names, API names, code, and CLI commands in English
+- **Use established term mappings**: Follow the heading patterns in `.claude/skills/scaffold-workshop/SKILL.md` (e.g., "Prerequisites" → "前提条件")
+
+## Code Style
+- **Python is primary**: This project uses Python — follow PEP 8 conventions
+- **Type hints**: Use type hints for function signatures
+- **Docstrings over comment dividers**: Use proper docstrings, not `# ====` style dividers
+- **Follow repo patterns**: Match the style of existing files in the same directory
+
 Remember: The goal is to make Amazon Bedrock AgentCore accessible to developers of all skill levels through practical, runnable, and well-documented examples.

@@ -30,7 +30,7 @@ sequenceDiagram
 
 ## Prerequisites
 
-1. **Identity setup** - Complete `03_identity` setup first for OAuth authentication
+1. **Identity setup** - Complete `06_identity` setup first for OAuth authentication
 2. **AWS SAM CLI** - For Lambda deployment
 3. **Amazon SES** - Verified sender email address
 4. **AWS credentials** - With Gateway, Lambda, and SES permissions
@@ -41,7 +41,7 @@ sequenceDiagram
 ### File Structure
 
 ```
-04_gateway/
+07_gateway/
 ├── README.md                      # This documentation
 ├── src/app.py                     # Lambda function implementation
 ├── template.yaml                  # SAM template for Lambda
@@ -54,7 +54,7 @@ sequenceDiagram
 ### Step 1: Deploy Lambda Function
 
 ```bash
-cd 04_gateway
+cd 07_gateway
 ./deploy.sh your-verified-email@example.com
 ```
 
@@ -64,16 +64,16 @@ Please verify your email address for Amazon SES.
 ### Step 2: Create Outbound Gateway
 
 ```bash
-cd 04_gateway
+cd 07_gateway
 uv run setup_outbound_gateway.py
 ```
 
-This creates the Gateway with OAuth authentication from `03_identity` and Lambda target integration.
+This creates the Gateway with OAuth authentication from `06_identity` and Lambda target integration.
 
 ### Step 3: Test Gateway Integration
 
 ```bash
-cd 04_gateway
+cd 07_gateway
 # Test with architecture description and email address
 uv run test_gateway.py --architecture "A web app with ALB and 2 EC2 instances" --address recipient@example.com
 ```
@@ -120,7 +120,7 @@ def lambda_handler(event, context):
 def setup_gateway(provider_name: str = PROVIDER_NAME, force: bool = False) -> dict:
     """Setup Gateway with Cognito OAuth authentication"""
     
-    # Load identity configuration from 03_identity
+    # Load identity configuration from 06_identity
     with open(IDENTITY_FILE) as f:
         identity_config = json.load(f)
 

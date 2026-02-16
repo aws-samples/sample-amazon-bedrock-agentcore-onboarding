@@ -62,10 +62,10 @@ The tool provides ready-to-use `agentcore` commands:
 
 ```bash
 # Configure the agent runtime (account id depends on your environment, please confirm outputs of prepare_agent.py)
-uv run agentcore configure --entrypoint ./deployment/invoke.py --name cost_estimator_agent --execution-role arn:aws:iam::123456789012:role/AgentCoreRole-cost_estimator_agent --requirements-file ./deployment/requirements.txt --disable-otel --region us-east-1
+uv run agentcore configure --entrypoint ./deployment/invoke.py --name cost_estimator_agent --execution-role arn:aws:iam::123456789012:role/AgentCoreRole-cost_estimator_agent --requirements-file ./deployment/requirements.txt --region us-east-1
 
 # Deploy the agent (pass AWS_REGION so the runtime can resolve region)
-uv run agentcore deploy --env AWS_REGION=$AWS_DEFAULT_REGION
+uv run agentcore deploy --env AWS_REGION=$(aws configure get region)
 
 # Test your agent
 uv run agentcore invoke '{"prompt": "I would like to prepare small EC2 for ssh. How much does it cost?"}'

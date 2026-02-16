@@ -340,22 +340,29 @@ class AgentWithMemory:
             if not self.memory_client or not self.memory_id:
                 return "❌ Memory not available for personalized recommendations"
 
-            # Long-term memory extraction is asynchronous — wait before retrieving.
-            # Per AWS docs: "It may take a minute or more for insights to become available."
+            # Long-term memory extraction is asynchronous.
+            # Poll retrieve_memories() until results appear (or timeout).
             # https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/long-term-saving-and-retrieving-insights.html
             namespace = f"/preferences/{self.actor_id}"
-            logger.info(f"⏳ Waiting 60s for async memory extraction (namespace: {namespace})...")
-            time.sleep(60)
+            query = f"User preferences and decision patterns for: {requirements}"
+            memories = []
+            max_wait, poll_interval = 60, 5
+            elapsed = 0
+            while elapsed < max_wait:
+                memories = self.memory_client.retrieve_memories(
+                    memory_id=self.memory_id,
+                    namespace=namespace,
+                    query=query,
+                    top_k=3
+                )
+                if memories:
+                    break
+                logger.info(f"⏳ Waiting for memory extraction... ({elapsed}s/{max_wait}s)")
+                time.sleep(poll_interval)
+                elapsed += poll_interval
 
-            # Retrieve user preferences and patterns from long-term memory
-            memories = self.memory_client.retrieve_memories(
-                memory_id=self.memory_id,
-                namespace=namespace,
-                query=f"User preferences and decision patterns for: {requirements}",
-                top_k=3
-            )
             contents = [memory.get('content', {}).get('text', '') for memory in memories]
-            logger.info(f"📋 Retrieved {len(memories)} long-term memories")
+            logger.info(f"📋 Retrieved {len(memories)} long-term memories after {elapsed}s")
 
             # Generate proposal using Bedrock
             logger.info(f"🔍 Generating proposal with requirements: {requirements}")

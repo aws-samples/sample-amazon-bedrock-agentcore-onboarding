@@ -9,7 +9,8 @@ app = BedrockAgentCoreApp()
 @app.entrypoint
 def invoke(payload):
     user_input = payload.get("prompt")
-    agent = AWSCostEstimatorAgent()
+    region = os.environ.get('AWS_REGION', 'us-west-2')
+    agent = AWSCostEstimatorAgent(region=region)
 
     # Batch
     return agent.estimate_costs(user_input)

@@ -64,8 +64,8 @@ uv run prepare_agent.py --source-dir ../01_code_interpreter/cost_estimator_agent
 # エージェントランタイムを設定 (アカウント id は実行環境に依存します。 `prepare_agent.py` の実行結果を確認してください)
 uv run agentcore configure --entrypoint ./deployment/invoke.py --name cost_estimator_agent --execution-role arn:aws:iam::123456789012:role/AgentCoreRole-cost_estimator_agent --requirements-file ./deployment/requirements.txt --disable-otel --region us-east-1
 
-# エージェントを起動
-uv run agentcore launch
+# エージェントをデプロイ（Runtime がリージョンを解決できるよう AWS_REGION を渡す）
+uv run agentcore deploy --env AWS_REGION=us-west-2
 
 # エージェントをテスト
 uv run agentcore invoke '{"prompt": "SSH用の小さなEC2を準備したいです。コストはいくらですか？"}'
@@ -186,7 +186,7 @@ configure_command = preparer.prepare()
 
 # 生成されたコマンドを使用してデプロイ
 # agentcore configure --entrypoint ./deployment/invoke.py ...
-# agentcore launch
+# agentcore deploy
 # agentcore invoke '{"prompt": "t3.micro EC2のコストは？"}'
 ```
 

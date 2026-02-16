@@ -13,6 +13,7 @@ Usage:
 """
 
 import json
+import os
 import boto3
 import logging
 import argparse
@@ -249,11 +250,12 @@ def main():
 
         agent_name = runtime_config.get("default_agent")
         secure_agent_name = f'{agent_name}_with_identity'
-        aws_config = runtime_config.get("agents").get(agent_name).get("aws")
-        ecr_repository = aws_config.get("ecr_repository")
-        network_mode = aws_config.get("network_configuration").get("network_mode")
+        agent_config = runtime_config.get("agents", {}).get(agent_name, {})
+        aws_config = agent_config.get("aws", {})
+        network_mode = aws_config.get("network_configuration", {}).get("network_mode")
         execution_role = aws_config.get("execution_role")
         region = aws_config.get("region")
+        deployment_type = agent_config.get("deployment_type")
         authorizer_config = {
             "customJWTAuthorizer": {
                 "discoveryUrl" : config["cognito"]["discovery_url"],
@@ -261,18 +263,41 @@ def main():
             }
         }
 
+        # Build artifact config based on deployment type
+        if deployment_type == "direct_code_deploy":
+            s3_path = aws_config.get("s3_path", "")
+            # Parse s3://bucket into bucket name
+            s3_bucket = s3_path.replace("s3://", "").rstrip("/")
+            runtime_type = agent_config.get("runtime_type", "PYTHON_3_12")
+            entrypoint = agent_config.get("entrypoint", "invoke.py")
+            entrypoint_parts = [os.path.basename(entrypoint)]
+            agent_runtime_artifact = {
+                "codeConfiguration": {
+                    "code": {
+                        "s3": {
+                            "bucket": s3_bucket,
+                            "prefix": f"{agent_name}/deployment.zip"
+                        }
+                    },
+                    "runtime": runtime_type,
+                    "entryPoint": entrypoint_parts
+                }
+            }
+        else:
+            ecr_repository = aws_config.get("ecr_repository")
+            agent_runtime_artifact = {
+                "containerConfiguration": {
+                    "containerUri": f"{ecr_repository}:latest"
+                }
+            }
+
         deploy_client = boto3.client('bedrock-agentcore-control', region_name=region)
         response = deploy_client.create_agent_runtime(
             agentRuntimeName=secure_agent_name,
-            agentRuntimeArtifact={
-                "containerConfiguration" : {
-                    "containerUri": f"{ecr_repository}:latest"
-                }
-            },
+            agentRuntimeArtifact=agent_runtime_artifact,
             networkConfiguration={"networkMode": network_mode},
             roleArn=execution_role,
             authorizerConfiguration=authorizer_config
-
         )
 
         runtime_id = response['agentRuntimeId']

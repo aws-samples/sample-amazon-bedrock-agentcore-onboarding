@@ -14,6 +14,8 @@ Key Features:
 """
 
 import logging
+import os
+import shutil
 import traceback
 import boto3
 from contextlib import contextmanager
@@ -64,8 +66,8 @@ class AWSCostEstimatorAgent:
         """
         self.region = region
         if not self.region:
-            # Use default region from boto3 session if not specified
-            self.region = boto3.Session().region_name
+            # Prefer AWS_REGION env var (always available in Runtime), fall back to boto3 session
+            self.region = os.environ.get('AWS_REGION') or boto3.Session().region_name
         self.code_interpreter = None
         
         logger.info(f"Initializing AWS Cost Estimator Agent in region: {region}")
@@ -139,9 +141,17 @@ class AWSCostEstimatorAgent:
                 **aws_credentials  # Include all AWS credentials
             }
             
+            # Find uvx binary: check PATH first, then fall back to uv package's bin dir
+            # (in Runtime, /var/task/bin/ is not on PATH so shutil.which may fail)
+            uvx_path = shutil.which("uvx")
+            if not uvx_path:
+                from uv._find_uv import find_uv_bin
+                uv_bin = find_uv_bin()
+                uvx_path = os.path.join(os.path.dirname(uv_bin), "uvx")
+
             aws_pricing_client = MCPClient(
                 lambda: stdio_client(StdioServerParameters(
-                    command="uvx", 
+                    command=uvx_path,
                     args=["awslabs.aws-pricing-mcp-server@latest"],
                     env=env_vars
                 ))

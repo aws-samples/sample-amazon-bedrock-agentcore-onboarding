@@ -66,10 +66,10 @@ uv run python test_memory.py
 ```
 
 This runs 4 steps sequentially:
-1. **Estimate** x2 — generates cost estimates, stores as short-term memory events
+1. **Estimate** x2 — generates cost estimates using `AWSCostEstimatorAgent`, stores as short-term memory events via `create_event()`
 2. **Compare** — retrieves events via `list_events()` and generates comparison
-3. **Wait** — polls `wait_for_memories()` until async preference extraction completes
-4. **Propose** — retrieves preferences via `retrieve_memories()` for personalized recommendation
+3. **Wait 60s** — long-term memory extraction is asynchronous ([per AWS docs](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/long-term-saving-and-retrieving-insights.html))
+4. **Propose** — retrieves extracted preferences via `retrieve_memories()` for personalized recommendation
 
 On first run, memory creation takes ~3 minutes. Subsequent runs reuse existing memory (instant).
 
@@ -113,8 +113,8 @@ with memory_agent as agent:
     agent("estimate: t3.small + ALB + RDS")
     agent("compare my estimates")
 
-    # Step 3: Wait for async preference extraction
-    memory_agent.wait_for_long_term_memory(max_wait=180)
+    # Step 3: Wait 60s for async preference extraction (per AWS docs)
+    memory_agent.wait_for_long_term_memory(wait_seconds=60)
 
     # Step 4: Propose using long-term memory
     agent("propose best architecture")
@@ -152,7 +152,7 @@ def estimate(self, architecture_description: str) -> str:
 ### Long-term Memory (User Preferences)
 - **API**: `retrieve_memories()` to retrieve extracted preferences
 - **Purpose**: Learn user decision patterns and preferences over time
-- **Note**: Extraction is **asynchronous** — use `wait_for_memories()` to poll until ready
+- **Note**: Extraction is **asynchronous** — wait ~60s before retrieving ([AWS docs](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/long-term-saving-and-retrieving-insights.html))
 - **Use Case**: Recommend architectures based on historical choices
 
 ## Usage Examples

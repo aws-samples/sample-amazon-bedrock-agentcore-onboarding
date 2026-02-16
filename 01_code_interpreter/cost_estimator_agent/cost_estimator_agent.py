@@ -66,8 +66,8 @@ class AWSCostEstimatorAgent:
         """
         self.region = region
         if not self.region:
-            # Prefer AWS_REGION env var (always available in Runtime), fall back to boto3 session
-            self.region = os.environ.get('AWS_REGION') or boto3.Session().region_name
+            # Follow AWS SDK resolution order: AWS_DEFAULT_REGION > AWS_REGION > boto3 session
+            self.region = os.environ.get('AWS_DEFAULT_REGION') or os.environ.get('AWS_REGION') or boto3.Session().region_name
         self.code_interpreter = None
         
         logger.info(f"Initializing AWS Cost Estimator Agent in region: {region}")

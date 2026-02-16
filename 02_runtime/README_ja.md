@@ -65,7 +65,7 @@ uv run prepare_agent.py --source-dir ../01_code_interpreter/cost_estimator_agent
 uv run agentcore configure --entrypoint ./deployment/invoke.py --name cost_estimator_agent --execution-role arn:aws:iam::123456789012:role/AgentCoreRole-cost_estimator_agent --requirements-file ./deployment/requirements.txt --disable-otel --region us-east-1
 
 # エージェントをデプロイ（Runtime がリージョンを解決できるよう AWS_REGION を渡す）
-uv run agentcore deploy --env AWS_REGION=us-west-2
+uv run agentcore deploy --env AWS_REGION=$AWS_DEFAULT_REGION
 
 # エージェントをテスト
 uv run agentcore invoke '{"prompt": "SSH用の小さなEC2を準備したいです。コストはいくらですか？"}'

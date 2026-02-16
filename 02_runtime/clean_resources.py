@@ -1,7 +1,6 @@
 import boto3
 import yaml
 import os
-import time
 
 
 def clean_resources():

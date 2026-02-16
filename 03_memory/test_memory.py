@@ -1,27 +1,31 @@
 """
 AWS Cost Estimator Agent with AgentCore Memory
 
-This implementation demonstrates AgentCore Memory capabilities by enhancing
-the AWS Cost Estimator with both short-term and long-term memory features.
+This implementation demonstrates AgentCore Memory capabilities:
+1. Short-term Memory (Events): Store and retrieve conversation history within a session
+2. Long-term Memory (Preferences): Automatically extract user preferences over time
+3. Comparison: Use short-term memory to compare multiple estimates side-by-side
+4. Personalization: Use long-term memory for personalized recommendations
 
-Key Features:
-1. Short-term Memory: Stores multiple cost estimations within a session for comparison
-2. Long-term Memory: Learns user decision patterns and preferences over time
-3. Comparison Feature: Enables side-by-side comparison of multiple estimates
-4. Decision Insights: Provides personalized recommendations based on historical patterns
-
-The AgentWithMemory class integrates memory functionality with the existing
-cost estimator agent, providing a comprehensive example of memory usage patterns.
+Uses the same AWSCostEstimatorAgent from 01_code_interpreter with simple architecture
+descriptions to demonstrate real end-to-end memory integration.
 """
 
 import sys
 import os
+import time
 import logging
 import traceback
 import argparse
 import json
 import boto3
 from datetime import datetime
+from strands import Agent, tool
+from bedrock_agentcore.memory.client import MemoryClient
+
+# Add the parent directory to the path to import from 01_code_interpreter
+sys.path.append(os.path.join(os.path.dirname(__file__), "..", "01_code_interpreter"))
+from cost_estimator_agent.cost_estimator_agent import AWSCostEstimatorAgent  # noqa: E402
 
 # Configure logging for debugging and monitoring
 logging.basicConfig(
@@ -30,13 +34,6 @@ logging.basicConfig(
     handlers=[logging.StreamHandler()]
 )
 logger = logging.getLogger(__name__)
-
-# Add the parent directory to the path to import from 01_code_interpreter
-sys.path.append(os.path.join(os.path.dirname(__file__), "..", "01_code_interpreter"))
-
-from strands import Agent, tool  # noqa: E402
-from bedrock_agentcore.memory.client import MemoryClient  # noqa: E402
-from cost_estimator_agent.cost_estimator_agent import AWSCostEstimatorAgent  # noqa: E402
 
 # Prompt Templates
 SYSTEM_PROMPT = """You are an AWS Cost Estimator Agent with memory capabilities.
@@ -218,22 +215,25 @@ class AgentWithMemory:
     @tool
     def estimate(self, architecture_description: str) -> str:
         """
-        Estimate costs for an AWS architecture
-        
+        Estimate costs for an AWS architecture using the Cost Estimator Agent.
+
         Args:
             architecture_description: Description of the AWS architecture to estimate
-            
+
         Returns:
             Cost estimation results
         """
         try:
             logger.info(f"🔍 Estimating costs for: {architecture_description}")
-            
-            # Use the existing cost estimator agent
+
+            # Use the Cost Estimator Agent (Code Interpreter + MCP pricing tools)
             cost_estimator = AWSCostEstimatorAgent(region=self.region)
             result = cost_estimator.estimate_costs(architecture_description)
-            # Store event in memory
-            logger.info("Store event to short term memory")
+
+            # Store event in short-term memory (create_event)
+            # This also triggers async long-term memory extraction
+            # via userPreferenceMemoryStrategy
+            logger.info("📝 Storing event to short-term memory...")
             self.memory_client.create_event(
                 memory_id=self.memory_id,
                 actor_id=self.actor_id,
@@ -244,10 +244,9 @@ class AgentWithMemory:
                 ]
             )
 
-            # The memory hook will automatically store this interaction
-            logger.info("✅ Cost estimation completed")
+            logger.info("✅ Cost estimation completed and stored in memory")
             return result
-            
+
         except Exception as e:
             logger.exception(f"❌ Cost estimation failed: {e}")
             return f"❌ Cost estimation failed: {e}"
@@ -324,44 +323,76 @@ class AgentWithMemory:
         logger.info(f"✅ Comparison completed for {len(estimates)} estimates")
         return comparison_result
 
+    def wait_for_long_term_memory(self, wait_seconds: int = 60) -> list:
+        """
+        Wait for long-term memory extraction to complete, then retrieve results.
+
+        Per AWS docs, long-term memory extraction is asynchronous and may take
+        a minute or more. This method follows the recommended pattern of waiting
+        a fixed duration before retrieving.
+
+        See: https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/long-term-saving-and-retrieving-insights.html
+
+        Args:
+            wait_seconds: Seconds to wait for async extraction (default: 60, per AWS docs)
+
+        Returns:
+            List of retrieved memory records
+        """
+        namespace = f"/preferences/{self.actor_id}"
+        logger.info(f"⏳ Waiting {wait_seconds}s for long-term memory extraction...")
+        logger.info(f"   (namespace: {namespace})")
+        time.sleep(wait_seconds)
+
+        memories = self.memory_client.retrieve_memories(
+            memory_id=self.memory_id,
+            namespace=namespace,
+            query="user preferences for AWS architecture decisions",
+            top_k=5
+        )
+        logger.info(f"✅ Retrieved {len(memories)} long-term memories")
+        return memories
+
     @tool
     def propose(self, requirements: str) -> str:
         """
         Propose optimal architecture based on user preferences and history
-        
+
         Args:
             requirements: User requirements for the architecture
-            
+
         Returns:
             Personalized architecture recommendation
         """
         try:
             logger.info("💡 Generating architecture proposal based on user history...")
-            
+
             if not self.memory_client or not self.memory_id:
                 return "❌ Memory not available for personalized recommendations"
-            
+
             # Retrieve user preferences and patterns from long-term memory
+            namespace = f"/preferences/{self.actor_id}"
             memories = self.memory_client.retrieve_memories(
                 memory_id=self.memory_id,
-                namespace=f"/preferences/{self.actor_id}",
+                namespace=namespace,
                 query=f"User preferences and decision patterns for: {requirements}",
                 top_k=3
             )
             contents = [memory.get('content', {}).get('text', '') for memory in memories]
+            logger.info(f"📋 Retrieved {len(memories)} long-term memories")
 
             # Generate proposal using Bedrock
-            logger.info(f"🔍 Generating proposal with requirements: {requirements}\nHistorical data: {contents}")
+            logger.info(f"🔍 Generating proposal with requirements: {requirements}")
             proposal_prompt = PROPOSAL_PROMPT_TEMPLATE.format(
                 requirements=requirements,
                 historical_data="\n".join(contents) if memories else "No historical data available"
             )
-            
+
             proposal = self._generate_with_bedrock(proposal_prompt)
-            
+
             logger.info("✅ Architecture proposal generated")
             return proposal
-            
+
         except Exception as e:
             logger.exception(f"❌ Proposal generation failed: {e}")
             return f"❌ Proposal generation failed: {e}"
@@ -437,35 +468,52 @@ Examples:
         print("⚡ Fast mode: Will reuse existing memory")
     
     try:
-        # Use context manager to ensure proper cleanup
-        with AgentWithMemory(actor_id="user123", force_recreate=args.force) as agent:
-            print("\n📝 Running cost estimates for different architectures...")
-            
-            # Estimate costs for three different architectures
+        # Create the memory-enhanced agent
+        memory_agent = AgentWithMemory(actor_id="user123", force_recreate=args.force)
+
+        with memory_agent as agent:
+            # --- Step 1: Short-term memory (create_event) ---
+            # Store cost estimates as events in short-term memory.
+            # Each create_event also triggers async long-term extraction.
+            print("\n📝 Step 1: Generating cost estimates (stored as short-term memory)...")
+
             architectures = [
-                "Single EC2 t3.micro instance with RDS MySQL for a small blog",
-                "Load balanced EC2 t3.small instances with RDS MySQL for medium traffic web app"
+                "1 EC2 t3.nano instance",
+                "1 EC2 t3.micro instance with 20GB gp3 EBS",
             ]
-            
-            print("\n🔍 Generating estimates...")
+
             for i, architecture in enumerate(architectures, 1):
                 print(f"\n--- Estimate #{i} ---")
-                result = agent(f"Please estimate architecture: {architecture}")
-                print(result)
-                result_text = result.message["content"] if result.message else "No estimation result."
-                print(f"Architecture: {architecture}")
-                print(f"Result: {result_text[:200]}..." if len(result_text) > 200 else result_text)
+                result = agent(f"Please estimate: {architecture}")
+                result_text = result.message["content"] if result.message else ""
+                print(f"Result: {result_text[:300]}..." if len(result_text) > 300 else f"Result: {result_text}")
 
-            print("\n" + "="*60)
-            print("📊 Comparing all estimates...")
-            comparison = agent("Could you please compare the estimates I just generated?")
+            # --- Step 2: Short-term memory (list_events) ---
+            # Retrieve stored events and compare estimates side-by-side.
+            print("\n" + "=" * 60)
+            print("📊 Step 2: Comparing estimates using short-term memory (list_events)...")
+            comparison = agent("Compare the estimates I just generated")
             print(comparison)
 
-            print("\n" + "="*60)
-            print("💡 Getting personalized recommendation...")
-            proposal = agent("Could you please propose best architecture for my preference?")
-            print(proposal)            
-            
+            # --- Step 3: Wait for long-term memory extraction ---
+            # Per AWS docs: "extraction is an asynchronous process that runs in the
+            # background. It may take a minute or more for insights to become available."
+            # https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/long-term-saving-and-retrieving-insights.html
+            print("\n" + "=" * 60)
+            print("⏳ Step 3: Waiting for long-term memory extraction...")
+            print("   (userPreferenceMemoryStrategy extracts preferences asynchronously)")
+            memories = memory_agent.wait_for_long_term_memory(wait_seconds=60)
+            for m in memories:
+                content = m.get('content', {}).get('text', '')
+                print(f"   - {content[:100]}")
+
+            # --- Step 4: Long-term memory (retrieve_memories) ---
+            # Use extracted preferences for personalized architecture proposal.
+            print("\n" + "=" * 60)
+            print("💡 Step 4: Generating proposal using long-term memory (retrieve_memories)...")
+            proposal = agent("Propose the best architecture based on my preferences")
+            print(proposal)
+
     except Exception as e:
         logger.exception(f"❌ Demo failed: {e}")
         print(f"\n❌ Demo failed: {e}")

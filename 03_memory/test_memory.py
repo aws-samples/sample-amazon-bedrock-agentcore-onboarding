@@ -323,36 +323,6 @@ class AgentWithMemory:
         logger.info(f"✅ Comparison completed for {len(estimates)} estimates")
         return comparison_result
 
-    def wait_for_long_term_memory(self, wait_seconds: int = 60) -> list:
-        """
-        Wait for long-term memory extraction to complete, then retrieve results.
-
-        Per AWS docs, long-term memory extraction is asynchronous and may take
-        a minute or more. This method follows the recommended pattern of waiting
-        a fixed duration before retrieving.
-
-        See: https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/long-term-saving-and-retrieving-insights.html
-
-        Args:
-            wait_seconds: Seconds to wait for async extraction (default: 60, per AWS docs)
-
-        Returns:
-            List of retrieved memory records
-        """
-        namespace = f"/preferences/{self.actor_id}"
-        logger.info(f"⏳ Waiting {wait_seconds}s for long-term memory extraction...")
-        logger.info(f"   (namespace: {namespace})")
-        time.sleep(wait_seconds)
-
-        memories = self.memory_client.retrieve_memories(
-            memory_id=self.memory_id,
-            namespace=namespace,
-            query="user preferences for AWS architecture decisions",
-            top_k=5
-        )
-        logger.info(f"✅ Retrieved {len(memories)} long-term memories")
-        return memories
-
     @tool
     def propose(self, requirements: str) -> str:
         """
@@ -370,8 +340,14 @@ class AgentWithMemory:
             if not self.memory_client or not self.memory_id:
                 return "❌ Memory not available for personalized recommendations"
 
-            # Retrieve user preferences and patterns from long-term memory
+            # Long-term memory extraction is asynchronous — wait before retrieving.
+            # Per AWS docs: "It may take a minute or more for insights to become available."
+            # https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/long-term-saving-and-retrieving-insights.html
             namespace = f"/preferences/{self.actor_id}"
+            logger.info(f"⏳ Waiting 60s for async memory extraction (namespace: {namespace})...")
+            time.sleep(60)
+
+            # Retrieve user preferences and patterns from long-term memory
             memories = self.memory_client.retrieve_memories(
                 memory_id=self.memory_id,
                 namespace=namespace,
@@ -495,22 +471,10 @@ Examples:
             comparison = agent("Compare the estimates I just generated")
             print(comparison)
 
-            # --- Step 3: Wait for long-term memory extraction ---
-            # Per AWS docs: "extraction is an asynchronous process that runs in the
-            # background. It may take a minute or more for insights to become available."
-            # https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/long-term-saving-and-retrieving-insights.html
-            print("\n" + "=" * 60)
-            print("⏳ Step 3: Waiting for long-term memory extraction...")
-            print("   (userPreferenceMemoryStrategy extracts preferences asynchronously)")
-            memories = memory_agent.wait_for_long_term_memory(wait_seconds=60)
-            for m in memories:
-                content = m.get('content', {}).get('text', '')
-                print(f"   - {content[:100]}")
-
-            # --- Step 4: Long-term memory (retrieve_memories) ---
+            # --- Step 3: Long-term memory (retrieve_memories) ---
             # Use extracted preferences for personalized architecture proposal.
             print("\n" + "=" * 60)
-            print("💡 Step 4: Generating proposal using long-term memory (retrieve_memories)...")
+            print("💡 Step 3: Generating proposal using long-term memory (retrieve_memories)...")
             proposal = agent("Propose the best architecture based on my preferences")
             print(proposal)
 

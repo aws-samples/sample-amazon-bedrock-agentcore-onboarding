@@ -30,10 +30,7 @@ sequenceDiagram
     Bedrock-->>Agent: Comparison analysis
     Agent-->>User: Side-by-side comparison
 
-    Note over Memory: Step 3: Wait for async extraction
-    Memory-->>Memory: userPreferenceMemoryStrategy extracts preferences
-
-    Note over User,Memory: Step 4: Propose using long-term memory
+    Note over User,Memory: Step 3: Propose using long-term memory
     User->>Agent: propose("best architecture")
     Agent->>Memory: retrieve_memories() → LONG-TERM MEMORY
     Memory-->>Agent: User preferences
@@ -65,11 +62,10 @@ cd 03_memory
 uv run python test_memory.py
 ```
 
-This runs 4 steps sequentially:
+This runs 3 steps sequentially:
 1. **Estimate** x2 — generates cost estimates using `AWSCostEstimatorAgent`, stores as short-term memory events via `create_event()`
 2. **Compare** — retrieves events via `list_events()` and generates comparison
-3. **Wait 60s** — long-term memory extraction is asynchronous ([per AWS docs](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/long-term-saving-and-retrieving-insights.html))
-4. **Propose** — retrieves extracted preferences via `retrieve_memories()` for personalized recommendation
+3. **Propose** — retrieves extracted preferences via `retrieve_memories()` for personalized recommendation
 
 On first run, memory creation takes ~3 minutes. Subsequent runs reuse existing memory (instant).
 
@@ -109,14 +105,11 @@ class AgentWithMemory:
 memory_agent = AgentWithMemory(actor_id="user123")
 with memory_agent as agent:
     # Step 1-2: Estimate and compare (short-term memory)
+    agent("estimate: t3.nano")
     agent("estimate: t3.micro + EBS")
-    agent("estimate: t3.small + ALB + RDS")
     agent("compare my estimates")
 
-    # Step 3: Wait 60s for async preference extraction (per AWS docs)
-    memory_agent.wait_for_long_term_memory(wait_seconds=60)
-
-    # Step 4: Propose using long-term memory
+    # Step 3: Propose using long-term memory (retrieve_memories)
     agent("propose best architecture")
 ```
 
@@ -152,7 +145,7 @@ def estimate(self, architecture_description: str) -> str:
 ### Long-term Memory (User Preferences)
 - **API**: `retrieve_memories()` to retrieve extracted preferences
 - **Purpose**: Learn user decision patterns and preferences over time
-- **Note**: Extraction is **asynchronous** — wait ~60s before retrieving ([AWS docs](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/long-term-saving-and-retrieving-insights.html))
+- **Note**: Extraction is **asynchronous** ([AWS docs](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/long-term-saving-and-retrieving-insights.html))
 - **Use Case**: Recommend architectures based on historical choices
 
 ## Usage Examples
@@ -170,9 +163,6 @@ with memory_agent as agent:
 
     # Compare using short-term memory (list_events)
     agent("compare my recent estimates")
-
-    # Wait 60s for async preference extraction (per AWS docs)
-    memory_agent.wait_for_long_term_memory(wait_seconds=60)
 
     # Get personalized recommendation using long-term memory (retrieve_memories)
     agent("propose optimal architecture for my needs")

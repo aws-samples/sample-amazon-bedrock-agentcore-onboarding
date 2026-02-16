@@ -52,7 +52,7 @@ def clean_resources():
             break
         except gateway_client.exceptions.ValidationException as e:
             if "has targets associated" in str(e) and attempt < max_retries:
-                print(f"Targets still propagating, waiting 5s...")
+                print("Targets still propagating, waiting 5s...")
                 time.sleep(5)
             else:
                 print(f"Warning: Failed to delete gateway: {e}")

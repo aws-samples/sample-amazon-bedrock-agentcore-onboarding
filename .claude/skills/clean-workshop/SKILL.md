@@ -10,10 +10,11 @@ Clean up AWS resources created by the AgentCore onboarding workshop.
 
 ## Usage
 
-- `/clean-workshop` — Clean all workshop resources (07, 06, 05, 03, 02)
+- `/clean-workshop` — Clean all workshop resources (09, 08, 07, 06, 05, 03, 02)
 - `/clean-workshop 02` — Clean only step 02 (runtime)
 - `/clean-workshop 02 03` — Clean steps 02 and 03
 - `/clean-workshop 05 06 07` — Clean steps 05, 06, and 07
+- `/clean-workshop 08 09` — Clean steps 08 and 09
 
 ## Arguments
 
@@ -31,15 +32,19 @@ Only these steps create AWS resources that need cleanup:
 | 05 | `05_evaluation/` | Custom evaluator (name: `cost_estimator_tool_usage`) | None |
 | 06 | `06_identity/` | OAuth2 provider, Cognito user pool/client/domain, runtime | `inbound_authorizer.json` |
 | 07 | `07_gateway/` | Gateway targets, gateway, config files | `outbound_gateway.json` |
+| 08 | `08_policy/` | Policy engine, policies, Cognito app clients | `policy_config.json` |
+| 09 | `09_browser_use/` | Browser sessions (ephemeral, auto-expire) | None |
 
 ## Dependency Order (CRITICAL)
 
 Resources MUST be cleaned in reverse dependency order to avoid errors:
-1. **07_gateway** first (depends on 06_identity)
-2. **06_identity** second (depends on 02_runtime)
-3. **05_evaluation** (independent)
-4. **03_memory** (independent)
-5. **02_runtime** last (other steps depend on it)
+1. **09_browser_use** first (independent, ephemeral sessions)
+2. **08_policy** second (depends on 07_gateway)
+3. **07_gateway** (depends on 06_identity)
+4. **06_identity** (depends on 02_runtime)
+5. **05_evaluation** (independent)
+6. **03_memory** (independent)
+7. **02_runtime** last (other steps depend on it)
 
 ## Execution
 
@@ -61,8 +66,8 @@ cd <project_root>/<step_directory> && uv run python clean_resources.py
 
 ## Implementation
 
-1. Parse `$ARGUMENTS` to determine which steps to clean. If empty, use all: `07 06 05 03 02`
-2. Sort the requested steps in correct cleanup order: 07, 06, 05, 03, 02
+1. Parse `$ARGUMENTS` to determine which steps to clean. If empty, use all: `09 08 07 06 05 03 02`
+2. Sort the requested steps in correct cleanup order: 09, 08, 07, 06, 05, 03, 02
 3. Create a task list tracking each step
 4. For each step (in order):
    a. Check if the step directory and config file exist

@@ -153,10 +153,16 @@ sequenceDiagram
 └── policy_config.json       # Generated configuration (after setup)
 ```
 
+All commands below assume you are in the `08_policy` directory:
+
+```bash
+cd 08_policy
+```
+
 ### Step 1: Setup Policy Resources
 
 ```bash
-uv run python 08_policy/setup_policy.py
+uv run python setup_policy.py
 ```
 
 This performs the following:
@@ -171,7 +177,7 @@ This performs the following:
 ### Step 2: Test as Developer (email DENIED)
 
 ```bash
-uv run python 08_policy/test_policy.py --role developer --address you@example.com
+uv run python test_policy.py --role developer --address you@example.com
 ```
 
 The Developer's token carries a different `sub` (client ID) than the Manager's. The Cedar policy has no `permit` matching the Developer's principal, so the **default-deny** kicks in and the `markdown_to_email` tool is **not visible** in the tool list. The agent estimates costs but cannot send the email. Compare the tool list in the log output — `markdown_to_email` is filtered out by policy.
@@ -179,7 +185,7 @@ The Developer's token carries a different `sub` (client ID) than the Manager's. 
 ### Step 3: Test as Manager (email ALLOWED)
 
 ```bash
-uv run python 08_policy/test_policy.py --role manager --address you@example.com
+uv run python test_policy.py --role manager --address you@example.com
 ```
 
 The Manager's token carries the client ID that the Cedar policy explicitly permits. The policy matches the `principal`, and **allows** the `markdown_to_email` tool call. The agent estimates costs AND sends the email to the client.
@@ -187,7 +193,7 @@ The Manager's token carries the client ID that the Cedar policy explicitly permi
 ### Step 4: Clean Up
 
 ```bash
-uv run python 08_policy/clean_resources.py
+uv run python clean_resources.py
 ```
 
 ## Key Implementation Details

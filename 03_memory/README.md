@@ -2,7 +2,7 @@
 
 [English](README.md) / [日本語](README_ja.md)
 
-This implementation demonstrates **AgentCore Memory** capabilities by enhancing the AWS Cost Estimator with both short-term and long-term memory features. The `AgentWithMemory` class provides practical examples of memory usage patterns for cost estimation, comparison, and personalized recommendations.
+This implementation demonstrates **AgentCore Memory** capabilities through a cost estimation agent that uses both short-term and long-term memory. The demo integrates the same `AWSCostEstimatorAgent` from Lab 01 (Code Interpreter + MCP pricing) with AgentCore Memory for a real end-to-end workflow.
 
 ## Process Overview
 
@@ -14,25 +14,26 @@ sequenceDiagram
     participant Memory as AgentCore Memory
     participant Bedrock as Amazon Bedrock
 
-    User->>Agent: estimate("small blog & web app")
-    Agent->>Estimator: Calculate costs
+    Note over User,Memory: Step 1: Store estimates (short-term memory)
+    User->>Agent: estimate("t3.micro + EBS")
+    Agent->>Estimator: AWSCostEstimatorAgent
     Estimator-->>Agent: Cost results
-    Agent->>Memory: Store interaction (SHORT TERM MEMORY)
+    Agent->>Memory: create_event() → SHORT-TERM MEMORY
     Memory-->>Agent: Event stored
-    Memory-->>Memory: (Automatic update of LONG TERM MEMORY)
     Agent-->>User: Cost estimate
 
+    Note over User,Memory: Step 2: Compare using short-term memory
     User->>Agent: compare("my estimates")
-    Agent->>Memory: Retrieve events (from SHORT MEMORY)
+    Agent->>Memory: list_events() → SHORT-TERM MEMORY
     Memory-->>Agent: Historical estimates
-    Memory-->>Memory: (Automatic update of LONG TERM MEMORY)
     Agent->>Bedrock: Generate comparison
     Bedrock-->>Agent: Comparison analysis
     Agent-->>User: Side-by-side comparison
 
-    User->>Agent: propose("optimal architecture")
-    Agent->>Memory: Retrieve preferences (from LONG TERM MEMORY)
-    Memory-->>Agent: User patterns
+    Note over User,Memory: Step 3: Propose using long-term memory
+    User->>Agent: propose("best architecture")
+    Agent->>Memory: retrieve_memories() → LONG-TERM MEMORY
+    Memory-->>Agent: User preferences
     Agent->>Bedrock: Generate proposal
     Bedrock-->>Agent: Personalized recommendation
     Agent-->>User: Architecture proposal
@@ -54,14 +55,19 @@ sequenceDiagram
 └── test_memory.py                 # Main implementation and test suite
 ```
 
-### Step 1: Run with Existing Memory (Fast)
+### Step 1: Run the Demo
 
 ```bash
 cd 03_memory
 uv run python test_memory.py
 ```
 
-This will reuse existing memory for faster debugging and testing.
+This runs 3 steps sequentially:
+1. **Estimate** x2 — generates cost estimates using `AWSCostEstimatorAgent`, stores as short-term memory events via `create_event()`
+2. **Compare** — retrieves events via `list_events()` and generates comparison
+3. **Propose** — retrieves extracted preferences via `retrieve_memories()` for personalized recommendation
+
+On first run, memory creation takes ~3 minutes. Subsequent runs reuse existing memory (instant).
 
 ### Step 2: Force Recreation (Clean Start)
 
@@ -70,7 +76,7 @@ cd 03_memory
 uv run python test_memory.py --force
 ```
 
-This will delete existing memory and create a fresh instance for clean testing.
+Deletes existing memory and creates a fresh instance. Use this for a clean start.
 
 ## Key Implementation Patterns
 
@@ -96,13 +102,15 @@ class AgentWithMemory:
 ### Context Manager Pattern
 
 ```python
-# Ensures proper resource management
-with AgentWithMemory(actor_id="user123") as agent:
-    # All operations happen within this context
-    result = agent("estimate architecture: t3.micro + RDS")
-    comparison = agent("compare my estimates")
-    proposal = agent("propose optimal architecture")
-# Memory is preserved for reuse (use --force to recreate)
+memory_agent = AgentWithMemory(actor_id="user123")
+with memory_agent as agent:
+    # Step 1-2: Estimate and compare (short-term memory)
+    agent("estimate: t3.nano")
+    agent("estimate: t3.micro + EBS")
+    agent("compare my estimates")
+
+    # Step 3: Propose using long-term memory (retrieve_memories)
+    agent("propose best architecture")
 ```
 
 ### Memory Storage Pattern
@@ -110,10 +118,11 @@ with AgentWithMemory(actor_id="user123") as agent:
 ```python
 @tool
 def estimate(self, architecture_description: str) -> str:
-    # Generate cost estimate
+    # Use the Cost Estimator Agent (Code Interpreter + MCP pricing)
+    cost_estimator = AWSCostEstimatorAgent(region=self.region)
     result = cost_estimator.estimate_costs(architecture_description)
-    
-    # Store interaction in memory for future comparison
+
+    # Store interaction → triggers async preference extraction
     self.memory_client.create_event(
         memory_id=self.memory_id,
         actor_id=self.actor_id,
@@ -129,45 +138,34 @@ def estimate(self, architecture_description: str) -> str:
 ## Memory Types Demonstrated
 
 ### Short-term Memory (Session Context)
+- **API**: `create_event()` to store, `list_events()` to retrieve
 - **Purpose**: Store multiple estimates within a session for immediate comparison
-- **Implementation**: Uses `list_events()` to retrieve recent interactions
-- **Use Case**: Compare 3 different EC2 instance types side-by-side
+- **Use Case**: Compare different EC2 instance types side-by-side
 
 ### Long-term Memory (User Preferences)
+- **API**: `retrieve_memories()` to retrieve extracted preferences
 - **Purpose**: Learn user decision patterns and preferences over time
-- **Implementation**: Uses `retrieve_memories()` with user preference strategy
+- **Note**: Extraction is **asynchronous** ([AWS docs](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/long-term-saving-and-retrieving-insights.html))
 - **Use Case**: Recommend architectures based on historical choices
 
 ## Usage Examples
 
-### Basic Cost Estimation with Memory
+### Full Example
 
 ```python
 from test_memory import AgentWithMemory
 
-with AgentWithMemory(actor_id="user123") as agent:
-    # Generate multiple estimates
-    result1 = agent("estimate: t3.micro + RDS MySQL")
-    result2 = agent("estimate: t3.small + RDS MySQL") 
-    result3 = agent("estimate: t3.medium + RDS MySQL")
-    
-    # Compare all estimates
-    comparison = agent("compare my recent estimates")
-    
-    # Get personalized recommendation
-    proposal = agent("propose optimal architecture for my needs")
-```
+memory_agent = AgentWithMemory(actor_id="user123")
+with memory_agent as agent:
+    # Generate estimates (stored as short-term memory events)
+    agent("estimate: 1 EC2 t3.nano instance")
+    agent("estimate: 1 EC2 t3.micro with 20GB gp3 EBS")
 
-### Memory Inspection for Debugging
+    # Compare using short-term memory (list_events)
+    agent("compare my recent estimates")
 
-```python
-with AgentWithMemory(actor_id="user123") as agent_wrapper:
-    # Access the underlying AgentWithMemory instance
-    memory_agent = agent_wrapper
-    
-    # Inspect stored events
-    events = memory_agent.list_memory_events(max_results=5)
-    print(f"Found {len(events)} events in memory")
+    # Get personalized recommendation using long-term memory (retrieve_memories)
+    agent("propose optimal architecture for my needs")
 ```
 
 ## Memory Benefits

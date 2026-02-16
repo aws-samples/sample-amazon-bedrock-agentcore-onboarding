@@ -47,8 +47,11 @@ def setup_gateway(provider_name: str = PROVIDER_NAME, force: bool = False) -> di
     control_client = boto3.client('bedrock-agentcore-control', region_name=region)
     gateway_client = GatewayClient(region_name=region)
     
+    # Check if gateway exists but target creation was incomplete
+    has_target = has_gateway and 'target_id' in config.get('gateway', {})
+
     # If everything is complete and not forcing, show summary and exit
-    if config and has_provider and has_gateway and not force:
+    if config and has_provider and has_target and not force:
         logger.info("All components already configured (use --force to recreate)")
         return config
     elif config:
@@ -56,6 +59,7 @@ def setup_gateway(provider_name: str = PROVIDER_NAME, force: bool = False) -> di
             logger.info("Delete existing Gateway...")
             delete_gateway(gateway_client, config['gateway'])
             has_gateway = False
+            has_target = False
     
     if not has_gateway:
         logger.info("Creating Gateway with credential provider...")
@@ -85,6 +89,13 @@ def setup_gateway(provider_name: str = PROVIDER_NAME, force: bool = False) -> di
         gateway_url = gateway["gatewayUrl"]
 
         logger.info("Gateway is created!")
+
+        # Wait for IAM role propagation — the SDK auto-creates
+        # AgentCoreGatewayExecutionRole when role_arn=None, and IAM roles
+        # are eventually consistent (~10-15s to propagate across AWS).
+        import time
+        logger.info("Waiting 15s for IAM role propagation...")
+        time.sleep(15)
 
         logger.info("Adding Lambda target to Gateway...")
         tool_schema = [
@@ -133,9 +144,17 @@ def setup_gateway(provider_name: str = PROVIDER_NAME, force: bool = False) -> di
             "credentialProviderConfigurations": [{"credentialProviderType": "GATEWAY_IAM_ROLE"}]
         }
 
-        target_response = control_client.create_gateway_target(**create_request)            
+        # Save gateway config before target creation (enables resume on partial failure)
+        save_config({
+            "gateway": {
+                "id": gateway_id,
+                "url": gateway_url,
+            }
+        })
+
+        target_response = control_client.create_gateway_target(**create_request)
         target_id = target_response["targetId"]
-        # Save gateway configuration immediately after creation
+        # Update config with target info
         save_config({
             "gateway": {
                 "id": gateway_id,

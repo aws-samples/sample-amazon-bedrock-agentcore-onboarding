@@ -6,6 +6,7 @@ A simple tool for deploying AI agents to Amazon Bedrock AgentCore Runtime.
 """
 
 import json
+import os
 import shutil
 import logging
 from pathlib import Path
@@ -24,7 +25,11 @@ logger = logging.getLogger(__name__)
 console = Console()
 
 # Constants
-DEFAULT_REGION = boto3.Session().region_name
+DEFAULT_REGION = (
+    boto3.Session().region_name
+    or os.environ.get('AWS_REGION')
+    or os.environ.get('AWS_DEFAULT_REGION')
+)
 DEPLOYMENTS_DIR = Path('./deployment')
 
 
@@ -49,13 +54,20 @@ class AgentPreparer:
     def prepare(self) -> str:
         """
         Prepare agent for deployment by creating deployment directory and IAM role
-            
+
         Returns:
             str: Command for agent configure
         """
+        if not self.region:
+            raise click.ClickException(
+                "AWS region is not configured. Please run:\n"
+                "  aws configure set region <your-region>  (e.g. us-west-2)\n"
+                "Then re-run this script."
+            )
+
         # Create deployment directory
         deployment_dir = self.create_source_directory()
-        
+
         # Create IAM role
         role_info = self.create_agentcore_role()
 
@@ -66,6 +78,8 @@ class AgentPreparer:
             f"--name {self.agent_name} \\",
             f"--execution-role {role_info['role_arn']} \\",
             f"--requirements-file {deployment_dir}/requirements.txt \\",
+            "--non-interactive \\",
+            "--deployment-type direct_code_deploy \\",
             f"--region {self.region} "
         ])
 
@@ -266,31 +280,27 @@ class AgentPreparer:
 
         if not role_exists:
             try:
-                # Create role
                 response = self.iam_client.create_role(
                     RoleName=role_name,
                     AssumeRolePolicyDocument=json.dumps(trust_policy),
                     Description=f'AgentCore execution role for {self.agent_name}'
                 )
                 logger.info(f"IAM role created successfully: {role_name}")
-                
             except ClientError as e:
                 logger.error(f"Failed to create IAM role: {e}")
-                return {}  # Return empty dict to indicate failure
+                return {}
 
-            # Always ensure the execution policy is attached (for both new and existing roles)
-            try:
-                self.iam_client.put_role_policy(
-                    RoleName=role_name,
-                    PolicyName=f'{role_name}-ExecutionPolicy',
-                    PolicyDocument=json.dumps(execution_policy)
-                )
-                    
-                logger.info(f"Execution policy attached to role: {role_name}")
-                
-            except ClientError as e:
-                logger.error(f"Failed to attach execution policy: {e}")
-                return {}  # Return empty dict to indicate failure
+        # Always ensure the execution policy is attached (for both new and existing roles)
+        try:
+            self.iam_client.put_role_policy(
+                RoleName=role_name,
+                PolicyName=f'{role_name}-ExecutionPolicy',
+                PolicyDocument=json.dumps(execution_policy)
+            )
+            logger.info(f"Execution policy attached to role: {role_name}")
+        except ClientError as e:
+            logger.error(f"Failed to attach execution policy: {e}")
+            return {}
 
         return {
             'agent_name': self.agent_name,

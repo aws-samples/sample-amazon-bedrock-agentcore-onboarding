@@ -54,7 +54,7 @@ def setup_gateway(provider_name: str = PROVIDER_NAME, force: bool = False) -> di
     elif config:
         if has_gateway and force:
             logger.info("Delete existing Gateway...")
-            delete_gateway(gateway_client, config)
+            delete_gateway(gateway_client, config['gateway'])
             has_gateway = False
     
     if not has_gateway:
@@ -166,7 +166,8 @@ def delete_gateway(client, config):
 
 def load_config():
     """Load configuration from file"""
-    config = {}
+    if not CONFIG_FILE.exists():
+        return {}
     with CONFIG_FILE.open('r') as f:
         config = json.load(f)
     return config
@@ -196,6 +197,7 @@ def main():
     except Exception as e:
         logger.warning("❌ Setup Gateway failed:")
         logger.exception(e)
+        return
 
     console.print_json(json.dumps(config))
     console.print(Panel("uv run python test_gateway.py", title="Let's test agent with gateway!"))

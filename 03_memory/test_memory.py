@@ -361,6 +361,12 @@ class AgentWithMemory:
                 time.sleep(poll_interval)
                 elapsed += poll_interval
 
+            if not memories:
+                logger.warning(
+                    "⚠️ No long-term memories found after %ds — extraction may still be in progress",
+                    max_wait,
+                )
+
             contents = [memory.get('content', {}).get('text', '') for memory in memories]
             logger.info(f"📋 Retrieved {len(memories)} long-term memories after {elapsed}s")
 

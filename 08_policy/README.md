@@ -153,10 +153,15 @@ sequenceDiagram
 └── policy_config.json       # Generated configuration (after setup)
 ```
 
-### Step 1: Setup Policy Resources
+All commands below assume you are in the `08_policy` directory:
 
 ```bash
 cd 08_policy
+```
+
+### Step 1: Setup Policy Resources
+
+```bash
 uv run python setup_policy.py
 ```
 
@@ -172,7 +177,6 @@ This performs the following:
 ### Step 2: Test as Developer (email DENIED)
 
 ```bash
-cd 08_policy
 uv run python test_policy.py --role developer --address you@example.com
 ```
 
@@ -181,7 +185,6 @@ The Developer's token carries a different `sub` (client ID) than the Manager's. 
 ### Step 3: Test as Manager (email ALLOWED)
 
 ```bash
-cd 08_policy
 uv run python test_policy.py --role manager --address you@example.com
 ```
 
@@ -190,7 +193,6 @@ The Manager's token carries the client ID that the Cedar policy explicitly permi
 ### Step 4: Clean Up
 
 ```bash
-cd 08_policy
 uv run python clean_resources.py
 ```
 

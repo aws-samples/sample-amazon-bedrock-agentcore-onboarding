@@ -16,8 +16,8 @@ sequenceDiagram
 
     Note over User,Memory: Step 1: Store estimates (short-term memory)
     User->>Agent: estimate("t3.micro + EBS")
-    Agent->>Bedrock: Generate cost estimate
-    Bedrock-->>Agent: Cost results
+    Agent->>Estimator: AWSCostEstimatorAgent
+    Estimator-->>Agent: Cost results
     Agent->>Memory: create_event() → SHORT-TERM MEMORY
     Memory-->>Agent: Event stored
     Agent-->>User: Cost estimate

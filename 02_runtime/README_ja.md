@@ -62,7 +62,7 @@ uv run prepare_agent.py --source-dir ../01_code_interpreter/cost_estimator_agent
 
 ```bash
 # エージェントランタイムを設定 (アカウント id は実行環境に依存します。 `prepare_agent.py` の実行結果を確認してください)
-uv run agentcore configure --entrypoint ./deployment/invoke.py --name cost_estimator_agent --execution-role arn:aws:iam::123456789012:role/AgentCoreRole-cost_estimator_agent --requirements-file ./deployment/requirements.txt --region us-east-1
+uv run agentcore configure --entrypoint ./deployment/invoke.py --name cost_estimator_agent --execution-role arn:aws:iam::123456789012:role/AgentCoreRole-cost_estimator_agent --requirements-file ./deployment/requirements.txt --disable-memory --region us-east-1
 
 # エージェントをデプロイ（Runtime がリージョンを解決できるよう AWS_REGION を渡す）
 uv run agentcore deploy --env AWS_REGION=$(aws configure get region)

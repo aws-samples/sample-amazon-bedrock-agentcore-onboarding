@@ -80,6 +80,7 @@ class AgentPreparer:
             f"--requirements-file {deployment_dir}/requirements.txt \\",
             "--non-interactive \\",
             "--deployment-type direct_code_deploy \\",
+            "--disable-memory \\",
             f"--region {self.region} "
         ])
 

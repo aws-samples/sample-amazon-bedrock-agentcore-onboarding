@@ -2,9 +2,10 @@
 Setup Cedar-based policy for fine-grained tool access control on AgentCore Gateway.
 
 This script creates:
-1. Two M2M app clients (Manager and Developer) with the same invoke scope
-2. Policy Engine with Cedar policy permitting email tool only for the Manager's principal
-3. Attaches the policy engine to the existing gateway
+1. Role scopes (manager, developer) on the Cognito resource server
+2. Two M2M app clients with role-specific scopes
+3. Policy Engine with Cedar policy permitting email tool only for the manager scope
+4. Attaches the policy engine to the existing gateway
 
 Prerequisites:
 - 06_identity setup complete (inbound_authorizer.json exists)
@@ -37,7 +38,7 @@ GATEWAY_FILE = Path("../07_gateway/outbound_gateway.json")
 CONFIG_FILE = Path("policy_config.json")
 
 POLICY_ENGINE_NAME = "cost_estimator_policy_engine"
-POLICY_NAME = "email_principal_policy"
+POLICY_NAME = "email_scope_policy"
 
 
 def load_config() -> dict:
@@ -81,12 +82,11 @@ def load_prerequisite_configs() -> tuple[dict, dict]:
 def setup_cognito_clients(
     identity_config: dict, gateway_config: dict, force: bool = False
 ) -> dict:
-    """Create two M2M app clients with the same invoke scope.
+    """Add role scopes to the resource server and create two M2M app clients.
 
-    Both clients get identical scopes. The Cedar policy distinguishes them
-    by principal (client ID), not by scope.
-    - Manager: permitted by Cedar policy to use markdown_to_email
-    - Developer: no matching permit, so email tool is hidden by default-deny
+    Each client gets the invoke scope plus a role scope (manager or developer).
+    The Cedar policy uses scope-based matching to permit the email tool only
+    for tokens that contain the manager scope.
     """
     config = load_config()
     if "cognito_clients" in config and not force:
@@ -98,6 +98,8 @@ def setup_cognito_clients(
     original_client_id = identity_config["cognito"]["client_id"]
     # The existing scope from step 06 (used for gateway invoke)
     existing_scope = identity_config["cognito"]["scope"]
+    # Extract resource server identifier from scope (format: "ResourceServer/scope")
+    resource_server_id = existing_scope.split("/")[0]
 
     cognito = boto3.client("cognito-idp")
 
@@ -106,31 +108,48 @@ def setup_cognito_clients(
         logger.info("Cleaning up existing Cognito resources...")
         _cleanup_cognito_clients(cognito, config["cognito_clients"])
 
-    # Both clients get the same invoke scope.
-    # Access control is handled by Cedar principal matching, not scopes.
-    client_scopes = [existing_scope]
+    # Step 1: Add role scopes to the existing resource server
+    # The resource server was created by step 06 with only the "invoke" scope.
+    # We add "manager" and "developer" scopes for role-based access control.
+    logger.info("Adding role scopes to resource server %s...", resource_server_id)
+    cognito.update_resource_server(
+        UserPoolId=user_pool_id,
+        Identifier=resource_server_id,
+        Name=resource_server_id,
+        Scopes=[
+            {"ScopeName": "invoke", "ScopeDescription": "Invoke the agent"},
+            {"ScopeName": "manager", "ScopeDescription": "Manager role scope"},
+            {"ScopeName": "developer", "ScopeDescription": "Developer role scope"},
+        ],
+    )
+    logger.info("Resource server updated with role scopes")
 
-    # Step 1: Create Manager app client
+    # Manager gets invoke + manager scopes
+    manager_scopes = [existing_scope, f"{resource_server_id}/manager"]
+    # Developer gets invoke + developer scopes
+    developer_scopes = [existing_scope, f"{resource_server_id}/developer"]
+
+    # Step 2: Create Manager app client
     logger.info("Creating Manager app client...")
     manager_response = cognito.create_user_pool_client(
         UserPoolId=user_pool_id,
         ClientName="CostEstimatorManager",
         GenerateSecret=True,
         AllowedOAuthFlows=["client_credentials"],
-        AllowedOAuthScopes=client_scopes,
+        AllowedOAuthScopes=manager_scopes,
         AllowedOAuthFlowsUserPoolClient=True,
     )
     manager_client = manager_response["UserPoolClient"]
     logger.info("Manager client created: %s", manager_client["ClientId"])
 
-    # Step 2: Create Developer app client
+    # Step 3: Create Developer app client
     logger.info("Creating Developer app client...")
     developer_response = cognito.create_user_pool_client(
         UserPoolId=user_pool_id,
         ClientName="CostEstimatorDeveloper",
         GenerateSecret=True,
         AllowedOAuthFlows=["client_credentials"],
-        AllowedOAuthScopes=client_scopes,
+        AllowedOAuthScopes=developer_scopes,
         AllowedOAuthFlowsUserPoolClient=True,
     )
     developer_client = developer_response["UserPoolClient"]
@@ -141,15 +160,16 @@ def setup_cognito_clients(
         "token_endpoint": token_endpoint,
         "original_client_id": original_client_id,
         "existing_scope": existing_scope,
+        "resource_server_id": resource_server_id,
         "manager": {
             "client_id": manager_client["ClientId"],
             "client_secret": manager_client["ClientSecret"],
-            "scopes": " ".join(client_scopes),
+            "scopes": " ".join(manager_scopes),
         },
         "developer": {
             "client_id": developer_client["ClientId"],
             "client_secret": developer_client["ClientSecret"],
-            "scopes": " ".join(client_scopes),
+            "scopes": " ".join(developer_scopes),
         },
     }
     save_config({"cognito_clients": cognito_config})
@@ -223,6 +243,27 @@ def update_gateway_allowed_clients(
     return gateway_arn
 
 
+def _fetch_existing_generation(
+    policy_client: PolicyClient, engine_id: str, gen_name: str
+) -> list:
+    """Fetch assets from an existing NL2Cedar generation by name."""
+    try:
+        generations = policy_client.list_policy_generations(
+            policy_engine_id=engine_id
+        )
+        for gen in generations.get("policyGenerations", []):
+            if gen.get("name", "").startswith(gen_name):
+                gen_id = gen["policyGenerationId"]
+                assets = policy_client.list_policy_generation_assets(
+                    policy_engine_id=engine_id,
+                    policy_generation_id=gen_id,
+                )
+                return assets.get("generatedPolicies", [])
+    except Exception as e:
+        logger.warning("Failed to fetch existing generation: %s", e)
+    return []
+
+
 def setup_policy_engine(console: Console) -> dict:
     """Create policy engine, demo NL2Cedar, and create Cedar policy."""
     config = load_config()
@@ -251,36 +292,62 @@ def setup_policy_engine(console: Console) -> dict:
         engine_id = config["policy_engine"]["id"]
         engine_arn = config["policy_engine"]["arn"]
 
-    # Step 2: Demo NL2Cedar generation (informational only)
-    logger.info("Demonstrating NL2Cedar policy generation...")
+    # Step 2: Generate Cedar policy via NL2Cedar
+    # NL2Cedar converts a natural language description into Cedar policies.
+    # We use the generated policy as the actual policy if it looks valid,
+    # otherwise fall back to a hand-crafted policy.
+    nl2cedar_statement = None
+    nl_description = (
+        "Allow any user whose OAuth token scope contains 'manager' "
+        "to use the markdown_to_email tool on the gateway. "
+        "Deny all other users from using the markdown_to_email tool."
+    )
+    # Derive generation name from engine ID for deterministic naming:
+    # same engine → same name (idempotent), new engine → new name (no stale conflicts)
+    engine_suffix = engine_id.rsplit("-", 1)[-1]
+    gen_name = f"email_scope_nl2cedar_{engine_suffix}"
+    logger.info("Generating Cedar policy via NL2Cedar...")
     try:
-        nl_description = (
-            "Allow users who have the email-send scope in their OAuth token "
-            "to use the markdown_to_email tool on the gateway. "
-            "Deny all other users from using the markdown_to_email tool."
-        )
         generation = policy_client.generate_policy(
             policy_engine_id=engine_id,
-            name="demo_nl2cedar_generation",
+            name=gen_name,
             resource={"arn": gateway_arn},
             content={"rawText": nl_description},
             fetch_assets=True,
         )
+        generated_policies = generation.get("generatedPolicies", [])
+    except Exception as e:
+        # If generation already exists (ConflictException on re-run),
+        # fetch its results instead of failing
+        generated_policies = []
+        if "ConflictException" in str(e):
+            logger.info("NL2Cedar generation already exists, fetching results...")
+            generated_policies = _fetch_existing_generation(
+                policy_client, engine_id, gen_name
+            )
+        else:
+            logger.warning("NL2Cedar generation failed: %s", e)
+
+    if generated_policies:
         console.print(Panel(
             f"[bold]Input:[/bold] {nl_description}",
             title="NL2Cedar: Natural Language Input",
         ))
-        generated_policies = generation.get("generatedPolicies", [])
         for i, asset in enumerate(generated_policies):
             cedar_def = asset.get("definition", {}).get("cedar", {})
-            statement = cedar_def.get("statement", "No statement generated")
-            console.print(Panel(
-                Syntax(statement, "cedar", theme="monokai"),
-                title=f"NL2Cedar: Generated Policy {i + 1}",
-            ))
-        logger.info("NL2Cedar demo complete (for reference only)")
-    except Exception as e:
-        logger.warning("NL2Cedar demo failed (non-critical): %s", e)
+            statement = cedar_def.get("statement", "")
+            if statement:
+                console.print(Panel(
+                    Syntax(statement, "cedar", theme="monokai"),
+                    title=f"NL2Cedar: Generated Policy {i + 1}",
+                ))
+                # Use the first generated policy that contains a permit statement
+                if nl2cedar_statement is None and "permit" in statement:
+                    nl2cedar_statement = statement
+        if nl2cedar_statement:
+            logger.info("NL2Cedar generated a usable policy")
+        else:
+            logger.warning("NL2Cedar output did not contain a usable permit statement")
 
     # Step 3: Create the actual Cedar policy
     if "policy" not in config:
@@ -290,32 +357,38 @@ def setup_policy_engine(console: Console) -> dict:
         tool_name = "markdown_to_email"
         action_name = f"{target_name}___{tool_name}"
 
-        # Use principal identity matching (JWT sub claim = Cognito client_id for M2M)
-        # This permits the email tool ONLY for the Manager's client_id
-        cognito_config = load_config().get("cognito_clients", {})
-        manager_client_id = cognito_config["manager"]["client_id"]
-
-        cedar_statement = (
+        # Hand-crafted fallback policy: scope-based matching with like operator
+        handcrafted_statement = (
             "permit(\n"
-            f'  principal == AgentCore::OAuthUser::"{manager_client_id}",\n'
+            "  principal,\n"
             f'  action == AgentCore::Action::"{action_name}",\n'
             f'  resource == AgentCore::Gateway::"{gateway_arn}"\n'
-            ");"
+            ") when {\n"
+            '  principal.hasTag("scope") &&\n'
+            '  principal.getTag("scope") like "*manager*"\n'
+            "};"
         )
+
+        if nl2cedar_statement:
+            cedar_statement = nl2cedar_statement
+            policy_source = "NL2Cedar"
+        else:
+            cedar_statement = handcrafted_statement
+            policy_source = "hand-crafted"
 
         console.print(Panel(
             Syntax(cedar_statement, "cedar", theme="monokai"),
-            title="Cedar Policy to Create",
+            title=f"Cedar Policy to Create ({policy_source})",
         ))
 
-        logger.info("Creating Cedar policy...")
+        logger.info("Creating Cedar policy (%s)...", policy_source)
         policy = policy_client.create_or_get_policy(
             policy_engine_id=engine_id,
             name=POLICY_NAME,
             definition={"cedar": {"statement": cedar_statement}},
             description=(
-                "Permit markdown_to_email tool only for the Manager "
-                "OAuth client (identified by JWT sub claim)"
+                "Permit markdown_to_email tool only for OAuth clients "
+                "whose token contains the manager scope"
             ),
         )
         policy_id = policy["policyId"]
@@ -325,9 +398,10 @@ def setup_policy_engine(console: Console) -> dict:
                 "id": policy_id,
                 "arn": policy_arn,
                 "cedar_statement": cedar_statement,
+                "source": policy_source,
             },
         })
-        logger.info("Cedar policy created: %s", policy_id)
+        logger.info("Cedar policy created (%s): %s", policy_source, policy_id)
 
     return load_config()
 
@@ -391,7 +465,7 @@ def main():
         identity_config, gateway_config = load_prerequisite_configs()
         logger.info("Loaded prerequisite configs from step 06 and 07")
 
-        # Step 1: Create Cognito resource server + M2M clients
+        # Step 1: Add role scopes + create M2M clients
         cognito_config = setup_cognito_clients(
             identity_config, gateway_config, force=args.force
         )

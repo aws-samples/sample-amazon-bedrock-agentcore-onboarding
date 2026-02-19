@@ -1,9 +1,9 @@
 """
 Test Cedar-based policy enforcement on AgentCore Gateway.
 
-Demonstrates principal-based access control:
-- Manager: principal matches Cedar permit -> can estimate costs AND send emails
-- Developer: no matching permit -> email tool is hidden by policy (default-deny)
+Demonstrates scope-based access control:
+- Manager: token contains manager scope -> Cedar permit matches -> can send emails
+- Developer: token lacks manager scope -> no matching permit -> email tool hidden
 
 Usage:
     uv run python 08_policy/test_policy.py --role manager --address you@example.com
@@ -143,9 +143,9 @@ def run_agent_with_role(role: str, architecture: str, address: str, console: Con
             )
 
         if has_email:
-            verdict = "[green bold]PERMITTED[/green bold] — Cedar policy matches this principal"
+            verdict = "[green bold]PERMITTED[/green bold] — token scope matches Cedar policy"
         else:
-            verdict = "[yellow bold]DEFAULT-DENY[/yellow bold] — no matching permit for this principal"
+            verdict = "[yellow bold]DEFAULT-DENY[/yellow bold] — token scope does not match any permit"
 
         console.print(Panel(
             f"[bold]Tools visible to {role.upper()}:[/bold]\n"

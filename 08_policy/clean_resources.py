@@ -142,6 +142,23 @@ def clean_resources():
                 except Exception as e:
                     print(f"Warning: Failed to delete {role} client: {e}")
 
+        # Step 4b: Restore resource server to original scopes (invoke only)
+        resource_server_id = cognito_clients.get("resource_server_id")
+        if resource_server_id:
+            print(f"Restoring resource server {resource_server_id} to original scopes...")
+            try:
+                cognito.update_resource_server(
+                    UserPoolId=user_pool_id,
+                    Identifier=resource_server_id,
+                    Name=resource_server_id,
+                    Scopes=[
+                        {"ScopeName": "invoke", "ScopeDescription": "Invoke the agent"},
+                    ],
+                )
+                print("Resource server scopes restored")
+            except Exception as e:
+                print(f"Warning: Failed to restore resource server scopes: {e}")
+
     # Step 5: Remove config file
     print("Removing policy_config.json")
     os.remove(POLICY_CONFIG_FILE)

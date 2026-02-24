@@ -76,37 +76,21 @@ When a tool call arrives at the Gateway, AgentCore automatically constructs the 
 >
 > **Reference**: For details on the authorization flow, see [Authorization Flow](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/policy-authorization-flow.html). For scope element definitions, see [Policy Scope](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/policy-scope.html). For condition expressions (`when`/`unless` clauses), see [Policy Conditions](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/policy-conditions.html).
 
-#### 4. In This Workshop: M2M Principal Matching
+#### 4. In This Workshop: Scope-Based Role Matching
 
-In this workshop, we use **M2M (Machine-to-Machine) OAuth** via Cognito `client_credentials` flow. We create two separate app clients, one for "Manager" and one for "Developer" and Manager client has permission to send email. In the `client_credentials` flow, each app client has a unique **client ID** that becomes the JWT `sub` claim and thus the Cedar **principal**
+In this workshop, we use **M2M (Machine-to-Machine) OAuth** via Cognito `client_credentials` flow. We create two app clients — "Manager" and "Developer" — and assign them **role-specific scopes** through the existing Cognito resource server:
 
-The Cedar policy uses `principal == AgentCore::OAuthUser::"<manager_client_id>"` to permit only the Manager. Since there is no matching `permit` for the Developer's client ID, the default-deny blocks email access automatically.
+- **Manager client** gets `invoke` + `manager` scopes
+- **Developer client** gets `invoke` + `developer` scopes
 
-This client separation is not necessary if you need ordinal OAuth with JWT token through `Authorization Flow` that contains claims like `username`, `role`, or `scope` that Cedar can evaluate. 
+The Cedar policy uses `principal.getTag("scope") like "*manager*"` to check whether the caller's JWT contains the `manager` scope. Since the Developer's token only carries `invoke developer` (no `manager` scope), the default-deny blocks email access automatically.
 
 | Cedar Element | M2M Value in This Workshop |
 |:---|:---|
-| **principal** | `AgentCore::OAuthUser::"<client_id>"` — the JWT `sub` claim, unique per app client |
+| **principal** | `AgentCore::OAuthUser::"<client_id>"` with scope tags from JWT |
 | **action** | `AgentCore::Action::"AWSCostEstimatorGatewayTarget___markdown_to_email"` |
 | **resource** | `AgentCore::Gateway::"arn:aws:bedrock-agentcore:...:gateway/..."` |
-
-> **In production: Scope-based or role-based matching**
->
-> With user-facing OAuth (Authorization Code flow), Cedar `when` clauses can evaluate JWT claims for more flexible access control:
-> ```cedar
-> // Scope-based: permit anyone with the email-send scope
-> when {
->   principal.hasTag("scope") &&
->   principal.getTag("scope") like "*email-send*"
-> };
->
-> // Role-based: permit only managers
-> when {
->   principal.hasTag("role") &&
->   principal.getTag("role") == "manager"
-> };
-> ```
-> These patterns decouple the policy from specific client IDs and are the recommended approach for production. Cedar `when` clauses can also restrict by user identity (`principal.getTag("username")`), and tool input parameters (`context.input.amount < 500`). For more patterns, see [Common Policy Patterns](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/policy-common-patterns.html) and [Example Policies](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/example-policies.html). For Cedar operator syntax, see the [Cedar Operators Reference](https://docs.cedarpolicy.com/policies/syntax-operators.html).
+| **when condition** | `principal.getTag("scope") like "*manager*"` — matches the `manager` scope in the JWT |
 
 ## Process Overview
 
@@ -118,16 +102,16 @@ sequenceDiagram
     participant Tool as markdown_to_email
     participant CE as cost_estimator
 
-    M->>GW: Request (Manager's client_id in JWT sub)
-    GW->>GW: Cedar: principal matches Manager → PERMIT
+    M->>GW: Request (Manager's manager scope in JWT)
+    GW->>GW: Cedar: scope matches manager → PERMIT
     Note over GW: Tool list: [cost_estimator, markdown_to_email]
     GW->>CE: Estimate costs
     CE-->>GW: Cost report
     GW->>Tool: Send email
     Tool-->>M: Email sent ✓
 
-    D->>GW: Request (Developer's client_id in JWT sub)
-    GW->>GW: Cedar: no matching permit → default-deny
+    D->>GW: Request (Developer's developer scope in JWT)
+    GW->>GW: Cedar: scope lacks manager → default-deny
     Note over GW: Tool list: [cost_estimator] (email tool hidden)
     GW->>CE: Estimate costs
     CE-->>D: Cost report only (agent never sees email tool)
@@ -167,11 +151,11 @@ uv run python setup_policy.py
 
 This performs the following:
 
-1. **Creates two M2M app clients** (Manager and Developer) with the same `invoke` scope
+1. **Creates two M2M app clients** (Manager and Developer) with **role-specific scopes** (`invoke` + `manager` or `invoke` + `developer`)
 2. **Updates the Gateway's `allowedClients`** so tokens from both new clients are accepted
 3. **Creates a Policy Engine** — the container for Cedar policies
 4. **Demonstrates NL2Cedar** — converts a natural language description into a Cedar policy using `StartPolicyGeneration`
-5. **Creates the Cedar policy** — permits `markdown_to_email` only for the Manager's client ID
+5. **Creates the Cedar policy** — permits `markdown_to_email` only for callers whose JWT scope contains `manager`
 6. **Attaches the Policy Engine** to the Gateway in `ENFORCE` mode
 
 ### Step 2: Test as Developer (email DENIED)
@@ -180,7 +164,7 @@ This performs the following:
 uv run python test_policy.py --role developer --address you@example.com
 ```
 
-The Developer's token carries a different `sub` (client ID) than the Manager's. The Cedar policy has no `permit` matching the Developer's principal, so the **default-deny** kicks in and the `markdown_to_email` tool is **not visible** in the tool list. The agent estimates costs but cannot send the email. Compare the tool list in the log output — `markdown_to_email` is filtered out by policy.
+The Developer's token carries the `developer` scope but not `manager`. The Cedar policy requires the `manager` scope to permit `markdown_to_email`, so the **default-deny** kicks in and the `markdown_to_email` tool is **not visible** in the tool list. The agent estimates costs but cannot send the email. Compare the tool list in the log output — `markdown_to_email` is filtered out by policy.
 
 ### Step 3: Test as Manager (email ALLOWED)
 
@@ -188,7 +172,7 @@ The Developer's token carries a different `sub` (client ID) than the Manager's. 
 uv run python test_policy.py --role manager --address you@example.com
 ```
 
-The Manager's token carries the client ID that the Cedar policy explicitly permits. The policy matches the `principal`, and **allows** the `markdown_to_email` tool call. The agent estimates costs AND sends the email to the client.
+The Manager's token carries the `manager` scope that the Cedar policy checks for. The policy matches the scope via `like "*manager*"`, and **allows** the `markdown_to_email` tool call. The agent estimates costs AND sends the email to the client.
 
 ### Step 4: Clean Up
 
@@ -198,19 +182,22 @@ uv run python clean_resources.py
 
 ## Key Implementation Details
 
-### Cedar Policy: Principal-Based Tool Access
+### Cedar Policy: Scope-Based Tool Access
 
 ```cedar
 permit(
-  principal == AgentCore::OAuthUser::"<manager_client_id>",
+  principal,
   action == AgentCore::Action::"AWSCostEstimatorGatewayTarget___markdown_to_email",
   resource == AgentCore::Gateway::"arn:aws:bedrock-agentcore:...:gateway/..."
-);
+) when {
+  principal.hasTag("scope") &&
+  principal.getTag("scope") like "*manager*"
+};
 ```
 
-This policy reads: "Allow the Manager application (identified by its OAuth client ID) to call the `markdown_to_email` tool on this Gateway."
+This policy reads: "Allow any caller whose JWT scope contains `manager` to call the `markdown_to_email` tool on this Gateway."
 
-The `setup_policy.py` script automatically inserts the Manager's actual client ID into the policy. Since there is no `permit` policy for the Developer's client ID, the default-deny behavior blocks them automatically — the email tool is not even visible in the Developer's tool list.
+The `setup_policy.py` script creates this scope-based policy automatically. Since the Developer's token only carries `invoke developer` scopes (no `manager`), the `when` condition fails and the default-deny behavior blocks them automatically — the email tool is not even visible in the Developer's tool list.
 
 ### NL2Cedar: Generating Policies from Natural Language
 
@@ -219,7 +206,7 @@ One of AgentCore Policy's most powerful features is **NL2Cedar** — the ability
 ```python
 # Describe the policy intent in natural language
 nl_description = (
-    "Allow users who have the email-send scope in their OAuth token "
+    "Allow any user whose OAuth token scope contains 'manager' "
     "to use the markdown_to_email tool on the gateway. "
     "Deny all other users from using the markdown_to_email tool."
 )
@@ -227,21 +214,30 @@ nl_description = (
 # Generate Cedar policy
 generation = policy_client.generate_policy(
     policy_engine_id=engine_id,
-    name="demo_nl2cedar_generation",
+    name="scope_based_email_policy",
     resource={"arn": gateway_arn},
     content={"rawText": nl_description},
     fetch_assets=True,
 )
 
-# Review the generated Cedar statement
+# Review the generated Cedar statements
 for asset in generation["generatedPolicies"]:
     print(asset["definition"]["cedar"]["statement"])
 ```
 
-The `setup_policy.py` script runs this as an informational demo so you can see the generated Cedar. In practice, you would:
-1. Generate candidate policies from natural language
-2. Review and optionally adjust the generated Cedar
-3. Create the final policy using `CreatePolicy`
+NL2Cedar generates a **pair of complementary policies** — a `permit` and a `forbid` — that together express the intent:
+
+```cedar
+// Policy 1: Allow callers with the manager scope
+permit(principal, action == ..., resource == ...)
+when { principal.hasTag("scope") && principal.getTag("scope") like "*manager*" };
+
+// Policy 2: Explicitly deny callers without the manager scope
+forbid(principal, action == ..., resource == ...)
+when { !(principal.hasTag("scope") && principal.getTag("scope") like "*manager*") };
+```
+
+In a default-deny system like AgentCore, the `forbid` policy is redundant — callers without a matching `permit` are already blocked. However, NL2Cedar generates both to be explicit. The `setup_policy.py` script uses the generated `permit` policy as the actual Cedar policy, with a hand-crafted fallback if NL2Cedar is unavailable.
 
 > **Tip**: For best NL2Cedar results, be specific about WHO (principal), WHAT (tool/action), and WHEN (conditions). Vague descriptions like "allow access" produce overly broad policies.
 

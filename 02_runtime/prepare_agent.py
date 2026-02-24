@@ -264,6 +264,15 @@ class AgentPreparer:
                         "pricing:*"
                     ],
                     "Resource": "*"
+                },
+                {
+                    "Sid": "MarketplaceAccess",
+                    "Effect": "Allow",
+                    "Action": [
+                        "aws-marketplace:Subscribe",
+                        "aws-marketplace:ViewSubscriptions"
+                    ],
+                    "Resource": "*"
                 }
             ]
         }
@@ -339,8 +348,8 @@ def prepare(source_dir: str, region: str):
         console.print("\n[bold]1. Configure the agent runtime:[/bold]")
         console.print(f"   [cyan]{configure_command}[/cyan]")
         
-        console.print("\n[bold]2. Launch the agent:[/bold]")
-        console.print("   [cyan]uv run agentcore launch[/cyan]")
+        console.print("\n[bold]2. Deploy the agent:[/bold]")
+        console.print("   [cyan]uv run agentcore deploy[/cyan]")
         
         console.print("\n[bold]3. Test your agent:[/bold]")
         console.print("   [cyan]uv run agentcore invoke '{\"prompt\": \"I would like to connect t3.micro from my PC. How much does it cost?\"}'[/cyan]")

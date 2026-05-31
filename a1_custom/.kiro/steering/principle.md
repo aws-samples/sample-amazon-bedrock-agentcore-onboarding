@@ -75,7 +75,7 @@ When asked to build an agent, follow this structured approach.
 ### Important Constraints
 
 - **Always** communicate in the user's language to ensure clear understanding
-- **Always** use `us.anthropic.claude-sonnet-4-20250514-v1:0`
+- **Always** use `us.anthropic.claude-sonnet-4-6`
 - **Always** verify Strands Agents API usage by checking reference implementations
 - **Do NOT** modify any code outside the `a1_custom/{agent_name}` directory
 - **Do NOT** write code from scratch - refer to existing implementations in `01_code_interpreter` and `02_runtime`

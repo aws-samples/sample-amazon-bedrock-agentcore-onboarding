@@ -105,7 +105,7 @@ TOOL_USAGE_EVALUATOR_CONFIG = {
     "llmAsAJudge": {
         "modelConfig": {
             "bedrockEvaluatorModelConfig": {
-                "modelId": "us.anthropic.claude-sonnet-4-20250514-v1:0",
+                "modelId": "us.anthropic.claude-sonnet-4-6",
             }
         },
         "instructions": (

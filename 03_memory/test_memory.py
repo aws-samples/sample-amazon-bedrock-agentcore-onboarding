@@ -397,8 +397,8 @@ class AgentWithMemory:
             Generated content from Bedrock
         """
         try:
-            # Use Claude Sonnet 4 for fast, cost-effective generation
-            model_id = "us.anthropic.claude-sonnet-4-20250514-v1:0"
+            # Use Claude Sonnet 4.6 for fast, cost-effective generation
+            model_id = "us.anthropic.claude-sonnet-4-6"
             
             # Prepare the message
             messages = [

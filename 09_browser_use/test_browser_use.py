@@ -75,7 +75,7 @@ def generate_form_values(
     Converse API, which returns a JSON mapping of field names to values.
     """
     bedrock_runtime = boto3.client("bedrock-runtime", region_name=region)
-    model_id = "us.anthropic.claude-sonnet-4-20250514-v1:0"
+    model_id = "us.anthropic.claude-sonnet-4-6"
 
     extra_context = ""
     if signature:

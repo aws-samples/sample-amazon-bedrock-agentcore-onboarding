@@ -12,6 +12,13 @@ else
     echo "Warning: No virtual environment found. Using system Python."
 fi
 
+# Ensure pip is available in the active environment.
+# `uv venv` does not install pip by default, but SAM's PythonPipBuilder needs it
+# to resolve the Lambda function's dependencies during `sam build`. Bootstrap it
+# from the bundled CPython wheel, falling back to uv's pip interface.
+echo "Ensuring pip is available for SAM build..."
+python -m ensurepip --upgrade 2>/dev/null || uv pip install pip
+
 STACK_NAME="AWS-Cost-Estimator-Tool-Markdown-To-Email"
 REGION=$(aws configure get region 2>/dev/null || true)
 if [ $# -lt 1 ]; then

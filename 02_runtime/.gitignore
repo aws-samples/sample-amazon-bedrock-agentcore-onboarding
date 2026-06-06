@@ -1,4 +1,5 @@
 deployment/cost_estimator_agent
+.bedrock_agentcore/
 Dockerfile
 .bedrock_agentcore.yaml
 test_agentcore_endpoint.py

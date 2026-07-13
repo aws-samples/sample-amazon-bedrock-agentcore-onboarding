@@ -148,13 +148,17 @@ class AgentWithMemory:
             if existing_memory is None:
                 # Create new memory
                 logger.info("Creating new AgentCore Memory...")
+                # Define the long-term memory strategy with a namespace *template*.
+                # {actorId} is a literal placeholder here — the AgentCore service
+                # resolves it to the concrete actor_id passed to create_event(), so a
+                # single memory resource isolates preferences per user.
                 self.memory = self.memory_client.create_memory_and_wait(
                     name=memory_name,
                     strategies=[{
                         "userPreferenceMemoryStrategy": {
                             "name": "UserPreferenceExtractor",
                             "description": "Extracts user preferences for AWS architecture decisions",
-                            "namespaces": [f"/preferences/{self.actor_id}"]
+                            "namespaceTemplates": ["/actor/{actorId}/preferences/"]
                         }
                     }],
                     event_expiry_days=7,  # Minimum allowed value
@@ -343,7 +347,10 @@ class AgentWithMemory:
             # Long-term memory extraction is asynchronous.
             # Poll retrieve_memories() until results appear (or timeout).
             # https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/long-term-saving-and-retrieving-insights.html
-            namespace = f"/preferences/{self.actor_id}"
+            # Resolve the template into the concrete path the service wrote to.
+            # This must equal what "/actor/{actorId}/preferences/" resolved to at
+            # create_event() time — both derive from actor_id, so they stay aligned.
+            namespace = f"/actor/{self.actor_id}/preferences/"
             query = f"User preferences and decision patterns for: {requirements}"
             memories = []
             max_wait, poll_interval = 60, 5

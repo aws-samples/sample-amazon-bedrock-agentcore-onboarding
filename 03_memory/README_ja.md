@@ -86,8 +86,6 @@ class AgentWithMemory:
                 "userPreferenceMemoryStrategy": {
                     "name": "UserPreferenceExtractor",
                     "description": "AWSアーキテクチャ決定のためのユーザー設定を抽出",
-                    # {actorId} はリテラルのテンプレート変数です。サービスが create_event()
-                    # ごとに解決し、各ユーザーを専用のネームスペースに分離します。
                     "namespaceTemplates": ["/actor/{actorId}/preferences/"]
                 }
             }],
@@ -139,25 +137,6 @@ def estimate(self, architecture_description: str) -> str:
 - **目的**: 時間の経過とともにユーザーの決定パターンと設定を学習
 - **実装**: ユーザー設定戦略で`retrieve_memories()`を使用
 - **ユースケース**: 履歴の選択に基づいてアーキテクチャを推奨
-
-#### ネームスペース: 定義は `{actorId}`、取得は解決済みの値で
-
-ネームスペースは長期メモリを整理し、アクターごとに分離します。テンプレートは一度だけ定義し、書き込み時にサービスが解決するため、定義側と取得側は非対称になります。
-
-| プロセス | コード | `{actorId}` を解決するのは |
-|----------|--------|----------------------------|
-| **定義**（`create_memory`） | `namespaceTemplates=["/actor/{actorId}/preferences/"]` | リテラルのプレースホルダー。`create_event()` ごとに**サービス**が解決 |
-| **取得**（`retrieve_memories`） | `namespace=f"/actor/{self.actor_id}/preferences/"` | **呼び出し側**が解決。保存済みのパスと一致させる必要がある |
-
-```
-create_memory   "/actor/{actorId}/preferences/"      ← リテラルのテンプレート
-create_event    actor_id="user123"
-              → "/actor/user123/preferences/" に保存   ← サービスが解決
-retrieve        f"/actor/{self.actor_id}/preferences/"
-              → "/actor/user123/preferences/"          ← 一致が必要
-```
-
-両側とも同じ `actor_id` から導出されるため、ずれることはありません。アクターを先頭に置く順序（`/actor/{actorId}/...`）を使うことで各ユーザーのデータが分離され、IAM は `namespacePath=/actor/${aws:PrincipalTag/userId}/*` でユーザーごとにアクセスを制限できます。定義時にテンプレートを f-string で展開しないでください。1つのアクターが埋め込まれ、ユーザーごとの分離が失われます。詳細は [ネームスペース設計パターン](https://aws.amazon.com/blogs/machine-learning/organizing-agents-memory-at-scale-namespace-design-patterns-in-agentcore-memory/) と [ネームスペースによる長期メモリの整理](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/specify-long-term-memory-organization.html) を参照してください。
 
 ## 使用例
 

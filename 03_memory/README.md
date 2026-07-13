@@ -92,8 +92,6 @@ class AgentWithMemory:
                 "userPreferenceMemoryStrategy": {
                     "name": "UserPreferenceExtractor",
                     "description": "Extracts user preferences for AWS architecture decisions",
-                    # {actorId} is a literal template variable — the service resolves it
-                    # per create_event(), isolating each user under their own namespace.
                     "namespaceTemplates": ["/actor/{actorId}/preferences/"]
                 }
             }],
@@ -149,25 +147,6 @@ def estimate(self, architecture_description: str) -> str:
 - **Purpose**: Learn user decision patterns and preferences over time
 - **Note**: Extraction is **asynchronous** ([AWS docs](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/long-term-saving-and-retrieving-insights.html))
 - **Use Case**: Recommend architectures based on historical choices
-
-#### Namespace: define with `{actorId}`, retrieve with the resolved value
-
-A namespace organizes long-term memories and isolates them per actor. The template is written once and resolved by the service at write time, so the two sides are asymmetric:
-
-| Process | Code | Who resolves `{actorId}` |
-|---------|------|--------------------------|
-| **Define** (`create_memory`) | `namespaceTemplates=["/actor/{actorId}/preferences/"]` | Literal placeholder — the **service** resolves it per `create_event()` |
-| **Retrieve** (`retrieve_memories`) | `namespace=f"/actor/{self.actor_id}/preferences/"` | **You** resolve it; it must match the stored path |
-
-```
-create_memory   "/actor/{actorId}/preferences/"      ← literal template
-create_event    actor_id="user123"
-              → stored at "/actor/user123/preferences/"   ← service resolves
-retrieve        f"/actor/{self.actor_id}/preferences/"
-              → "/actor/user123/preferences/"             ← must match
-```
-
-Because both sides derive from the same `actor_id`, they cannot drift. Use actor-first ordering (`/actor/{actorId}/...`) so each user's data stays isolated and IAM can scope access per user with `namespacePath=/actor/${aws:PrincipalTag/userId}/*`. Do **not** f-string the template at definition time — that bakes one actor in and defeats per-user isolation. See [namespace design patterns](https://aws.amazon.com/blogs/machine-learning/organizing-agents-memory-at-scale-namespace-design-patterns-in-agentcore-memory/) and [specify long-term memory organization](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/specify-long-term-memory-organization.html).
 
 ## Usage Examples
 

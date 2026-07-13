@@ -86,7 +86,7 @@ class AgentWithMemory:
                 "userPreferenceMemoryStrategy": {
                     "name": "UserPreferenceExtractor",
                     "description": "AWSアーキテクチャ決定のためのユーザー設定を抽出",
-                    "namespaces": [f"/preferences/{self.actor_id}"]
+                    "namespaceTemplates": ["/actor/{actorId}/preferences/"]
                 }
             }],
             event_expiry_days=7,

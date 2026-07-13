@@ -92,7 +92,7 @@ class AgentWithMemory:
                 "userPreferenceMemoryStrategy": {
                     "name": "UserPreferenceExtractor",
                     "description": "Extracts user preferences for AWS architecture decisions",
-                    "namespaces": [f"/preferences/{self.actor_id}"]
+                    "namespaceTemplates": ["/actor/{actorId}/preferences/"]
                 }
             }],
             event_expiry_days=7,

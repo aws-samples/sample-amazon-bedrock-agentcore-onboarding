@@ -1,27 +1,31 @@
 """
-AWS Cost Estimation Agent using Amazon Bedrock AgentCore Code Interpreter
+AWS Cost Estimation Agent with AgentCore Memory
 
 Facade class that encapsulates:
 - Model creation (BedrockModel with adaptive retry)
 - MCP Pricing client (stdio via uvx, graceful fallback)
 - Code Interpreter tool (secure sandbox execution)
-- Strands Agent orchestration
+- Strands Agent orchestration, one Agent per (session, actor) so that each
+  conversation gets its own AgentCore Memory session manager
 """
 
-import asyncio
 import logging
 import os
 import shutil
 import boto3
-from typing import AsyncGenerator
+from typing import AsyncGenerator, Optional
 from strands import Agent, tool
 from strands.models import BedrockModel
 from strands.tools.mcp import MCPClient
 from strands.handlers.callback_handler import null_callback_handler
+from strands.agent.conversation_manager.null_conversation_manager import (
+    NullConversationManager,
+)
 from botocore.config import Config
 from mcp import stdio_client, StdioServerParameters
 from bedrock_agentcore.tools.code_interpreter_client import CodeInterpreter
-from config import SYSTEM_PROMPT, DEFAULT_MODEL, COST_ESTIMATION_PROMPT
+from config import SYSTEM_PROMPT, DEFAULT_MODEL
+from memory_session import get_memory_session_manager
 
 logger = logging.getLogger(__name__)
 
@@ -29,9 +33,11 @@ logger = logging.getLogger(__name__)
 class AWSCostEstimatorAgent:
     """AWS Cost Estimation Agent — Facade/Singleton.
 
-    Owns all resources (model, tools, MCP client, Code Interpreter) and
-    exposes a single streaming interface. Constructed once and reused
-    across invocations for memory efficiency.
+    Owns the expensive shared resources (model config, MCP pricing client,
+    Code Interpreter session) once, and hands out one lightweight Strands
+    Agent per (session_id, actor_id) pair. Each Agent is bound to an
+    AgentCore Memory session manager, which persists the conversation as
+    short-term memory and injects long-term insights back into the context.
     """
 
     def __init__(self, region: str = ""):
@@ -42,7 +48,8 @@ class AWSCostEstimatorAgent:
         )
         self._code_interpreter = None
         self._pricing_client = None
-        self._agent = None
+        self._tools = []
+        self._agents = {}
 
         self._initialize()
 
@@ -51,10 +58,12 @@ class AWSCostEstimatorAgent:
         self.cleanup()
 
     def _initialize(self) -> None:
-        """Initialize all components: pricing tools, Code Interpreter, Agent.
+        """Initialize the shared resources used by every session.
 
         Facade responsibility: builds everything in one place to avoid
-        implicit dependencies on external module-level state.
+        implicit dependencies on external module-level state. Note that the
+        Strands Agent itself is NOT built here — it is created per session in
+        agent_for() because the memory session manager is session-scoped.
         """
         # 1. Pricing tools (MCP)
         pricing_tools = self._prepare_pricing_tools()
@@ -62,13 +71,27 @@ class AWSCostEstimatorAgent:
         # 2. Code Interpreter for secure calculations
         self._prepare_code_interpreter()
 
-        # 3. Build agent with all tools
-        tools = pricing_tools + [self._prepare_cost_calculation_tool()]
-        self._agent = Agent(
-            model=self._load_model(),
-            system_prompt=SYSTEM_PROMPT,
-            tools=tools,
-        )
+        # 3. Tool set shared by every session
+        self._tools = pricing_tools + [self._prepare_cost_calculation_tool()]
+
+    def agent_for(self, session_id: Optional[str], actor_id: str) -> Agent:
+        """Get or create the Agent for a (session, actor) pair.
+
+        The AgentCore Memory session manager restores prior turns of the same
+        session (short-term memory) and retrieves actor-scoped insights from
+        earlier sessions (long-term memory). NullConversationManager is used
+        because history management is delegated to the session manager.
+        """
+        key = (session_id, actor_id)
+        if key not in self._agents:
+            self._agents[key] = Agent(
+                model=self._load_model(),
+                system_prompt=SYSTEM_PROMPT,
+                tools=self._tools,
+                session_manager=get_memory_session_manager(session_id, actor_id),
+                conversation_manager=NullConversationManager(),
+            )
+        return self._agents[key]
 
     def _load_model(self) -> BedrockModel:
         """Create BedrockModel with extended timeouts for cost estimation."""
@@ -222,48 +245,24 @@ class AWSCostEstimatorAgent:
             logger.error(f"❌ Failed to get AWS credentials: {e}")
             return {}
 
-    async def stream(self, prompt: str) -> AsyncGenerator[dict, None]:
-        """Stream agent response for a given prompt.
+    async def stream(
+        self, prompt: str, session_id: Optional[str] = None, actor_id: str = "default-user"
+    ) -> AsyncGenerator[dict, None]:
+        """Stream agent response for a given prompt within a session.
 
         Yields:
             dict with "data" key containing text chunks
         """
-        async for event in self._agent.stream_async(
+        agent = self.agent_for(session_id, actor_id)
+        async for event in agent.stream_async(
             prompt, callback_handler=null_callback_handler
         ):
             yield event
 
-    def estimate_costs(self, architecture_description: str) -> str:
-        """Estimate costs synchronously and return the full response text.
-
-        Convenience wrapper around stream() for callers that are not async —
-        for example the local evaluation in 05_evaluation.
-        """
-        prompt = COST_ESTIMATION_PROMPT.format(
-            architecture_description=architecture_description
-        )
-
-        async def _collect() -> str:
-            chunks = []
-            previous = ""
-            async for event in self.stream(prompt):
-                if "data" not in event:
-                    continue
-                current = str(event["data"])
-                if current.startswith(previous):
-                    delta = current[len(previous):]
-                    if delta:
-                        chunks.append(delta)
-                    previous = current
-                else:
-                    chunks.append(current)
-                    previous = current
-            return "".join(chunks)
-
-        return asyncio.run(_collect())
-
     def cleanup(self) -> None:
         """Release resources."""
+        self._agents = {}
+
         if self._code_interpreter:
             try:
                 self._code_interpreter.stop()

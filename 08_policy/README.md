@@ -78,12 +78,14 @@ When a tool call arrives at the Gateway, AgentCore automatically constructs the 
 
 #### 4. In This Workshop: Scope-Based Role Matching
 
-In this workshop, we use **M2M (Machine-to-Machine) OAuth** via Cognito `client_credentials` flow. We create two app clients — "Manager" and "Developer" — and assign them **role-specific scopes** through the existing Cognito resource server:
+In this workshop, we use **M2M (Machine-to-Machine) OAuth** via Cognito `client_credentials` flow. Rather than creating extra app clients, we add two scopes to the **existing** client through the Cognito resource server and request one at a time:
 
-- **Manager client** gets `invoke` + `manager` scopes
-- **Developer client** gets `invoke` + `developer` scopes
+- Requesting `agentcore/manager` produces a token whose scope matches the policy
+- Requesting `agentcore/viewer` produces a token whose scope does not
 
-The Cedar policy uses `principal.getTag("scope") like "*manager*"` to check whether the caller's JWT contains the `manager` scope. Since the Developer's token only carries `invoke developer` (no `manager` scope), the default-deny blocks email access automatically.
+Keeping one app client means the `client_id` — and therefore the Gateway's `allowedClients` — stays unchanged.
+
+The Cedar policy uses `principal.getTag("scope") like "*manager*"` to check whether the caller's JWT contains the `manager` scope. Since the viewer token only carries `agentcore/viewer`, the default-deny blocks email access automatically.
 
 | Cedar Element | M2M Value in This Workshop |
 |:---|:---|
@@ -104,15 +106,15 @@ sequenceDiagram
 
     M->>GW: Request (Manager's manager scope in JWT)
     GW->>GW: Cedar: scope matches manager → PERMIT
-    Note over GW: Tool list: [cost_estimator, markdown_to_email]
+    Note over GW: Tool list: [markdown_to_email]
     GW->>CE: Estimate costs
     CE-->>GW: Cost report
     GW->>Tool: Send email
     Tool-->>M: Email sent ✓
 
-    D->>GW: Request (Developer's developer scope in JWT)
+    D->>GW: Request (scope=agentcore/viewer)
     GW->>GW: Cedar: scope lacks manager → default-deny
-    Note over GW: Tool list: [cost_estimator] (email tool hidden)
+    Note over GW: Tool list: [] (email tool hidden)
     GW->>CE: Estimate costs
     CE-->>D: Cost report only (agent never sees email tool)
 ```
@@ -129,13 +131,16 @@ sequenceDiagram
 
 ```
 08_policy/
-├── README.md                # This documentation
-├── README_ja.md             # Japanese documentation
-├── setup_policy.py          # Create policy engine, Cedar policy, Cognito clients
-├── test_policy.py           # Test role-based access (manager vs developer)
-├── clean_resources.py       # Resource cleanup
-└── policy_config.json       # Generated configuration (after setup)
+├── README.md                          # This documentation
+├── README_ja.md                       # Japanese documentation
+├── setup_policy_demo.py               # Renders the Cedar policy and adds the demo scopes
+├── policies/
+│   └── email_scope.cedar.template      # Cedar policy template
+└── test_policy.py                     # Tests scope-based access (manager vs viewer)
 ```
+
+The policy engine and the Cedar policy are declared in `agentcore.json` and created by
+`agentcore deploy`, so no script is needed to create them.
 
 All commands below assume you are in the `08_policy` directory:
 
@@ -143,42 +148,117 @@ All commands below assume you are in the `08_policy` directory:
 cd 08_policy
 ```
 
-### Step 1: Setup Policy Resources
+### Step 1: Render the Cedar Policy and Add the Demo Scopes
 
 ```bash
-uv run python setup_policy.py
+uv run python setup_policy_demo.py
 ```
 
 This performs the following:
 
-1. **Creates two M2M app clients** (Manager and Developer) with **role-specific scopes** (`invoke` + `manager` or `invoke` + `developer`)
-2. **Updates the Gateway's `allowedClients`** so tokens from both new clients are accepted
-3. **Creates a Policy Engine** — the container for Cedar policies
-4. **Demonstrates NL2Cedar** — converts a natural language description into a Cedar policy using `StartPolicyGeneration`
-5. **Creates the Cedar policy** — permits `markdown_to_email` only for callers whose JWT scope contains `manager`
-6. **Attaches the Policy Engine** to the Gateway in `ENFORCE` mode
+1. **Renders the Cedar policy** — substitutes `__ACTION_NAME__` and `__GATEWAY_ARN__` in
+   `policies/email_scope.cedar.template` with the real values read from the Lab 7 project's
+   `agentcore/.cli/deployed-state.json`, producing `policies/email_scope.cedar`
+2. **Adds the demo scopes** — declares `manager` / `viewer` on the Cognito resource server and
+   allows both on the existing app client
 
-### Step 2: Test as Developer (email DENIED)
-
-```bash
-uv run python test_policy.py --role developer --address you@example.com
+```
+INFO: ✅ Rendered policies/email_scope.cedar
+INFO: ✅ App client allowed scopes: ['agentcore/invoke', 'agentcore/manager', 'agentcore/viewer']
 ```
 
-The Developer's token carries the `developer` scope but not `manager`. The Cedar policy requires the `manager` scope to permit `markdown_to_email`, so the **default-deny** kicks in and the `markdown_to_email` tool is **not visible** in the tool list. The agent estimates costs but cannot send the email. Compare the tool list in the log output — `markdown_to_email` is filtered out by policy.
-
-### Step 3: Test as Manager (email ALLOWED)
+### Step 2: Declare and Deploy the Policy Engine and Cedar Policy
 
 ```bash
-uv run python test_policy.py --role manager --address you@example.com
+cd ../agents/MyGatewayProject
+
+agentcore add policy-engine \
+    --name cost_estimator_policy_engine \
+    --attach-to-gateways AWSCostEstimatorGateway \
+    --attach-mode ENFORCE
+
+agentcore add policy \
+    --name email_scope_policy \
+    --engine cost_estimator_policy_engine \
+    --source ../../08_policy/policies/email_scope.cedar
+
+agentcore deploy
 ```
 
-The Manager's token carries the `manager` scope that the Cedar policy checks for. The policy matches the scope via `like "*manager*"`, and **allows** the `markdown_to_email` tool call. The agent estimates costs AND sends the email to the client.
+`--attach-mode` accepts `ENFORCE` (actually allow/deny) and `LOG_ONLY` (shadow mode that only
+records decisions). Start with `LOG_ONLY` before switching to `ENFORCE` in production.
 
-### Step 4: Clean Up
+### Step 3: Test with the viewer Scope (email DENIED)
+
+```bash
+cd ../../08_policy
+uv run python test_policy.py --scope viewer
+```
+
+The viewer token carries `agentcore/viewer` but not `manager`. The Cedar policy requires the
+`manager` scope to permit `markdown_to_email`, so the **default-deny** kicks in and the tool is
+**not visible** in the tool list.
+
+```
+╭─────────────────────────── Policy Effect: VIEWER ────────────────────────────╮
+│ Gateway tools visible with agentcore/viewer:                                 │
+│   (none)                                                                     │
+│   ✗ markdown_to_email — hidden by Cedar policy                               │
+│                                                                              │
+│ Policy decision: DEFAULT-DENY — token scope matches no permit                │
+╰──────────────────────────────────────────────────────────────────────────────╯
+```
+
+Because the tool disappears from the list, the agent never learns it exists.
+
+### Step 4: Test with the manager Scope (email ALLOWED)
+
+```bash
+uv run python test_policy.py --scope manager
+```
+
+The manager token carries the scope the Cedar policy checks for, so `markdown_to_email` is
+exposed.
+
+```
+╭─────────────────────────── Policy Effect: MANAGER ───────────────────────────╮
+│ Gateway tools visible with agentcore/manager:                                │
+│   ✓ AWSCostEstimatorGatewayTarget___markdown_to_email                        │
+│                                                                              │
+│ Policy decision: PERMITTED — token scope matches the Cedar policy            │
+╰──────────────────────────────────────────────────────────────────────────────╯
+```
+
+Run without arguments to compare both. Add `--address` to run the estimate end-to-end and send
+the email (requires a verified SES sender).
+
+```bash
+uv run python test_policy.py
+uv run python test_policy.py --scope manager --address you@example.com
+```
+
+### Step 5: Clean Up
 
 ```bash
 uv run python clean_resources.py
 ```
+
+The script does three things: it reverts the demo scopes added to the Cognito app client,
+removes the Cedar policy and the policy engine, and applies the change with
+`agentcore deploy`.
+
+> A policy engine cannot be removed while it still holds a policy, so `policy` must be
+> removed before `policy-engine`.
+
+To delete the gateway itself, run `../07_gateway/clean_resources.py --force`.
+
+`test_policy.py` options:
+
+| Flag | Description | Default |
+|---|---|---|
+| `--scope` | OAuth scope to use (`viewer` / `manager`) | required |
+| `--architecture` | Architecture description for the cost estimate | a default scenario |
+| `--region` | AWS region | from the profile |
 
 ## Key Implementation Details
 
@@ -197,7 +277,7 @@ permit(
 
 This policy reads: "Allow any caller whose JWT scope contains `manager` to call the `markdown_to_email` tool on this Gateway."
 
-The `setup_policy.py` script creates this scope-based policy automatically. Since the Developer's token only carries `invoke developer` scopes (no `manager`), the `when` condition fails and the default-deny behavior blocks them automatically — the email tool is not even visible in the Developer's tool list.
+The action name follows the Gateway convention `<TargetName>___<ToolName>`. Both the action name and the Gateway ARN are only known after `agentcore deploy` has created the Gateway, so `setup_policy_demo.py` renders the policy file from a template. Since the viewer token carries no `manager` scope, the `when` condition fails and the default-deny behavior blocks it automatically — the email tool is not even visible in the tool list.
 
 ### NL2Cedar: Generating Policies from Natural Language
 
@@ -237,18 +317,43 @@ forbid(principal, action == ..., resource == ...)
 when { !(principal.hasTag("scope") && principal.getTag("scope") like "*manager*") };
 ```
 
-In a default-deny system like AgentCore, the `forbid` policy is redundant — callers without a matching `permit` are already blocked. However, NL2Cedar generates both to be explicit. The `setup_policy.py` script uses the generated `permit` policy as the actual Cedar policy, with a hand-crafted fallback if NL2Cedar is unavailable.
+In a default-deny system like AgentCore, the `forbid` policy is redundant — callers without a matching `permit` are already blocked. However, NL2Cedar generates both to be explicit. This lab keeps a hand-written Cedar policy in a file and passes it with `--source` so the intent stays obvious and reviewable.
 
 > **Tip**: For best NL2Cedar results, be specific about WHO (principal), WHAT (tool/action), and WHEN (conditions). Vague descriptions like "allow access" produce overly broad policies.
 
 ### Policy Engine Attachment
 
-```python
-gateway_client.update_gateway_policy_engine(
-    gateway_identifier=gateway_id,
-    policy_engine_arn=engine_arn,
-    mode="ENFORCE",  # or "LOG_ONLY" for monitoring before enforcement
-)
+The Policy Engine is declared and attached in `agentcore.json`. The `--attach-to-gateways`
+and `--attach-mode` flags are written to the AgentCore Gateway's `policyEngineConfiguration`,
+not to the Policy Engine itself.
+
+```json
+{
+  "policyEngines": [
+    {
+      "name": "cost_estimator_policy_engine",
+      "policies": [
+        {
+          "name": "email_scope_policy",
+          "statement": "// Permit the markdown_to_email tool only for OAuth clients whose access token\n...",
+          "sourceFile": "../../08_policy/policies/email_scope.cedar",
+          "validationMode": "FAIL_ON_ANY_FINDINGS",
+          "enforcementMode": "ACTIVE",
+          "authorizationPhase": "INITIATE"
+        }
+      ]
+    }
+  ],
+  "agentCoreGateways": [
+    {
+      "name": "AWSCostEstimatorGateway",
+      "policyEngineConfiguration": {
+        "policyEngineName": "cost_estimator_policy_engine",
+        "mode": "ENFORCE"
+      }
+    }
+  ]
+}
 ```
 
 The `LOG_ONLY` mode is useful during initial rollout — policies are evaluated and decisions are logged, but requests are not actually blocked. Switch to `ENFORCE` when confident.

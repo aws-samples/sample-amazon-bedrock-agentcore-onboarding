@@ -28,8 +28,14 @@ import boto3
 from bedrock_agentcore.tools.browser_client import browser_session
 from playwright.sync_api import BrowserType, Page, Playwright, sync_playwright
 
-sys.path.append(os.path.join(os.path.dirname(__file__), "..", "01_code_interpreter"))
-from cost_estimator_agent.cost_estimator_agent import AWSCostEstimatorAgent  # noqa: E402
+# The base agent lives under agents/ and uses flat imports (from config import ...),
+# so its directory has to be on sys.path.
+AGENT_DIR = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)),
+    "..", "agents", "CostEstimatorAgent", "app", "CostEstimatorAgent",
+)
+sys.path.insert(0, AGENT_DIR)
+from cost_estimator_agent import AWSCostEstimatorAgent  # noqa: E402
 
 logging.basicConfig(
     level=logging.INFO,
@@ -48,7 +54,10 @@ def run_cost_estimation(architecture: str, region: str) -> str:
     """Run the cost estimator agent and return the raw estimation text."""
     cost_estimator = AWSCostEstimatorAgent(region=region)
     logger.info("Running cost estimation for: %s", architecture)
-    result = cost_estimator.estimate_costs(architecture)
+    try:
+        result = cost_estimator.estimate_costs(architecture)
+    finally:
+        cost_estimator.cleanup()
     logger.info("Cost estimation complete (%d chars)", len(result))
     return result
 

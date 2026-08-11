@@ -1,0 +1,4 @@
+# Scaffolds created by `agentcore create` during the labs.
+# Only the base agent (CostEstimatorAgent) and setup.py are tracked here;
+# lab-specific code lives in the lab directories (e.g. ../03_memory/agent).
+My*Agent/

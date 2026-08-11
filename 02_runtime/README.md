@@ -2,208 +2,267 @@
 
 [English](README.md) / [日本語](README_ja.md)
 
-This implementation demonstrates **AgentCore Runtime** deployment using the `prepare_agent.py` tool that automates agent preparation and seamlessly integrates with the official [bedrock-agentcore-starter-toolkit](https://github.com/aws/bedrock-agentcore-starter-toolkit).
+This implementation demonstrates **AgentCore Runtime** deployment using the **AgentCore CLI**. `agentcore deploy` creates the execution role and the Runtime together through the AWS CDK, so there is no IAM role script and no `agentcore configure` step.
 
 ## Process Overview
 
 ```mermaid
 sequenceDiagram
     participant Dev as Developer
-    participant Prep as prepare_agent.py
-    participant IAM as AWS IAM
-    participant CLI as agentcore CLI
+    participant CLI as AgentCore CLI
+    participant CDK as AWS CDK /<br/>CloudFormation
     participant Runtime as AgentCore Runtime
 
-    Dev->>Prep: prepare --source-dir
-    Prep->>IAM: Create AgentCore Role
-    IAM-->>Prep: Role ARN
-    Prep->>Prep: Copy Source Files
-    Prep-->>Dev: Configure Command
-    Dev->>CLI: agentcore configure
-    CLI->>Runtime: Deploy Agent
+    Dev->>CLI: agentcore create
+    CLI-->>Dev: Scaffold (app/ and agentcore/)
+    Dev->>CLI: python setup.py --target
+    CLI-->>Dev: Wire additionalPolicies into agentcore.json
+    Dev->>CLI: agentcore deploy
+    CLI->>CDK: Synthesize and deploy CloudFormation
+    CDK->>Runtime: Create the execution role and the Runtime
+    Runtime-->>Dev: Runtime ARN
     Dev->>CLI: agentcore invoke
-    CLI->>Runtime: Execute Agent
-    Runtime-->>CLI: Results
+    CLI->>Runtime: Run the agent
+    Runtime-->>CLI: Result
 ```
 
 ## Prerequisites
 
-1. **Agent source code** - Complete `01_code_interpreter` implementation first
-2. **AWS credentials** - With IAM permissions for role creation
-3. **AgentCore CLI** - Install [bedrock-agentcore-starter-toolkit](https://github.com/aws/bedrock-agentcore-starter-toolkit)
-4. **Dependencies** - Installed via `uv` (see pyproject.toml)
+1. **Agent source code** - the base `agents/CostEstimatorAgent` is used as-is
+2. **AWS credentials** - with Bedrock and CloudFormation permissions
+3. **Node.js** - required by the CDK (used by `agentcore deploy`)
+4. **AgentCore CLI** - `npm install -g @aws/agentcore`
+5. **CDK bootstrap** - run `cdk bootstrap` in the target region
+6. **Dependencies** - installed via `uv` (see pyproject.toml)
 
 ## How to use
 
 ### File Structure
 
+Lab 2 deploys the **base agent as-is**, so no agent code lives in this directory.
+
 ```
 02_runtime/
-├── README.md                    # This documentation
-├── prepare_agent.py             # Agent preparation tool
-└── deployment/                  # Generated deployment directory
-   ├── invoke.py                 # Runtime entrypoint
-   ├── requirements.txt          # Dependencies
-   └── cost_estimator_agent/     # Copied source files
+├── README.md                    # This document
+└── invoke_agent.py              # Client that calls InvokeAgentRuntime via boto3
 ```
 
-### Step 1: Prepare Your Agent
+The agent implementation lives in `agents/CostEstimatorAgent/app/CostEstimatorAgent/`.
+
+### Step 1: Scaffold the Project
 
 ```bash
-cd 02_runtime
-uv run prepare_agent.py --source-dir ../01_code_interpreter/cost_estimator_agent
+cd agents
+agentcore create \
+    --name MyCostEstimatorAgent \
+    --framework Strands \
+    --model-provider Bedrock \
+    --protocol HTTP \
+    --build CodeZip \
+    --memory none \
+    --skip-git
 ```
 
-This will create deployment directory and IAM role with all necessary AgentCore permissions.
+This creates `app/` for the agent code and `agentcore/` for the configuration and CDK project.
 
-### Step 2: Use Generated Commands
-
-The tool provides ready-to-use `agentcore` commands:
+### Step 2: Copy in the Base Agent Code
 
 ```bash
-# Configure the agent runtime (account id depends on your environment, please confirm outputs of prepare_agent.py)
-uv run agentcore configure --entrypoint ./deployment/invoke.py --name cost_estimator_agent --execution-role arn:aws:iam::123456789012:role/AgentCoreRole-cost_estimator_agent --requirements-file ./deployment/requirements.txt --disable-memory --region us-east-1
+python setup.py --target MyCostEstimatorAgent
+```
 
-# Deploy the agent (pass AWS_REGION so the runtime can resolve region)
-uv run agentcore deploy --env AWS_REGION=$(aws configure get region)
+`setup.py` copies the code and `iam_policies/` from `agents/CostEstimatorAgent/` into the scaffold and wires the IAM policies into `runtimes[0].additionalPolicies` in `agentcore.json`.
+
+### Step 3: Deploy and Invoke
+
+```bash
+# Install dependencies
+cd MyCostEstimatorAgent/app/MyCostEstimatorAgent
+uv sync
+
+# Deploy (the CDK creates the execution role and the Runtime)
+cd ../..
+agentcore deploy
+
+# Check the deployment
+agentcore status
 
 # Test your agent
-uv run agentcore invoke '{"prompt": "I would like to prepare small EC2 for ssh. How much does it cost?"}'
+agentcore invoke 'I want a small EC2 instance for SSH access in us-west-2. What does it cost?'
 ```
+
+Applications call the agent through boto3.
+
+```bash
+cd ../../02_runtime
+uv run python invoke_agent.py --agent-arn <runtime-arn>
+
+# Demo showing that conversation continuity is scoped to a session
+uv run python invoke_agent.py --agent-arn <runtime-arn> --demo-session
+```
+
+`invoke_agent.py` options:
+
+| Flag | Description | Default |
+|---|---|---|
+| `--agent-arn` | Runtime ARN (see `agentcore status`) | required |
+| `--prompt` | Prompt to send | an S3 cost estimate |
+| `--session-id` | Runtime session ID (33+ characters) | a fresh UUID |
+| `--region` | AWS region | from the profile |
+| `--demo-session` | Run a 3-call demo showing session-scoped conversation continuity | — |
+| `--demo-first-prompt` | First prompt of `--demo-session` | English default |
+| `--demo-followup-prompt` | Follow-up prompt of `--demo-session`, reused for the new session | English default |
+
+The agent answers in the language of the prompt, so pass a translated `--prompt` to run the
+check in another language.
+
+### Step 4: Clean Up
+
+```bash
+cd ../agents/MyCostEstimatorAgent
+agentcore remove all
+agentcore deploy   # apply the removal to AWS (tears down the stack)
+```
+
+Deletion takes two steps: `agentcore remove all` empties the declarations in
+`agentcore.json`, and `agentcore deploy` applies that removal to AWS. **`remove` alone
+leaves the AWS resources in place.**
+
+Everything in this directory is managed by the AgentCore CLI, so no cleanup script is
+needed. Keep the runtime if you plan to continue with Lab 4 (Observability) or
+Lab 5 (Evaluation).
 
 ## Key Implementation Pattern
 
-### Agent Preparation Class
+### Declarative Deployment Configuration
 
-```python
-class AgentPreparer:
-    """Handles preparation of agent for deployment"""
-    
-    def __init__(self, source_dir: str, region: str = DEFAULT_REGION):
-        self.source_dir = Path(source_dir)
-        self.region = region
-        self.iam_client = boto3.client('iam', region_name=region)
-    
-    def prepare(self) -> str:
-        """Prepare agent for deployment by creating deployment directory and IAM role"""
-        # Create deployment directory
-        deployment_dir = self.create_source_directory()
-        
-        # Create IAM role
-        role_info = self.create_agentcore_role()
+Deployment settings are declared in `agentcore/agentcore.json`.
 
-        # Build agentcore configure command
-        command = f"agentcore configure --entrypoint {deployment_dir}/invoke.py " \
-                    f"--name {self.agent_name} " \
-                    f"--execution-role {role_info['role_arn']} " \
-                    f"--requirements-file {deployment_dir}/requirements.txt " \
-                    f"--region {self.region}"
-
-        return command
+```json
+{
+  "name": "MyCostEstimatorAgent",
+  "managedBy": "CDK",
+  "runtimes": [
+    {
+      "name": "MyCostEstimatorAgent",
+      "build": "CodeZip",
+      "entrypoint": "main.py",
+      "codeLocation": "app/MyCostEstimatorAgent/",
+      "runtimeVersion": "PYTHON_3_14",
+      "networkMode": "PUBLIC",
+      "protocol": "HTTP",
+      "additionalPolicies": [
+        "iam_policies/code-interpreter-policy.json",
+        "iam_policies/pricing-api-policy.json"
+      ]
+    }
+  ]
+}
 ```
 
-### IAM Role Creation with AgentCore Permissions
+### Agent-Specific IAM Permissions via additionalPolicies
+
+Runtime-wide permissions such as `bedrock:InvokeModel`, `logs:*` and `xray:*` are granted automatically by `agentcore deploy`. **Agent-specific permissions are not.** Because this agent uses the Code Interpreter and the AWS Pricing API, `setup.py` wires two policies in.
 
 ```python
-def create_agentcore_role(self) -> dict:
-    """Create IAM role with AgentCore permissions"""
-    role_name = f"AgentCoreRole-{self.agent_name}"
-    
-    # Trust policy for bedrock-agentcore service
-    trust_policy = {
-        "Version": "2012-10-17",
-        "Statement": [
-            {
-                "Effect": "Allow",
-                "Principal": {
-                    "Service": "bedrock-agentcore.amazonaws.com"
-                },
-                "Action": "sts:AssumeRole",
-                "Condition": {
-                    "StringEquals": {
-                        "aws:SourceAccount": account_id
-                    },
-                    "ArnLike": {
-                        "aws:SourceArn": f"arn:aws:bedrock-agentcore:{self.region}:{account_id}:*"
-                    }
-                }
-            }
-        ]
-    }
-    
-    # Execution policy with comprehensive AgentCore permissions
-    execution_policy = {
-        "Version": "2012-10-17",
-        "Statement": [
-            {
-                "Sid": "BedrockPermissions",
-                "Effect": "Allow",
-                "Action": [
-                    "bedrock:InvokeModel",
-                    "bedrock:InvokeModelWithResponseStream"
-                ],
-                "Resource": "*"
-            },
-            {
-                "Effect": "Allow",
-                "Action": [
-                    "bedrock-agentcore:CreateCodeInterpreter",
-                    "bedrock-agentcore:StartCodeInterpreterSession",
-                    "bedrock-agentcore:InvokeCodeInterpreter",
-                    "bedrock-agentcore:StopCodeInterpreterSession",
-                    "bedrock-agentcore:DeleteCodeInterpreter"
-                ],
-                "Resource": "arn:aws:bedrock-agentcore:*:*:*"
-            }
-        ]
-    }
+# agents/setup.py
+def configure_additional_policies(agentcore_json_path: Path, policies: list[str]) -> None:
+    """Add additionalPolicies to runtimes[0] in agentcore.json."""
+    with open(agentcore_json_path, "r") as f:
+        config = json.load(f)
+
+    if config.get("runtimes"):
+        config["runtimes"][0]["additionalPolicies"] = policies
+
+    with open(agentcore_json_path, "w") as f:
+        json.dump(config, f, indent=2)
+        f.write("\n")
 ```
 
 ### Runtime Entrypoint Pattern
 
-```python
-# deployment/invoke.py
-from bedrock_agentcore.runtime import BedrockAgentCoreApp
+`main.py` takes the `AWSCostEstimatorAgent` singleton and streams the response.
 
+```python
+# agents/CostEstimatorAgent/app/CostEstimatorAgent/main.py
 app = BedrockAgentCoreApp()
+_agent = None
+
+
+def get_or_create_agent() -> AWSCostEstimatorAgent:
+    """Get or create the cost estimation agent (singleton)."""
+    global _agent
+    if _agent is None:
+        _agent = AWSCostEstimatorAgent(region=REGION)
+    return _agent
+
 
 @app.entrypoint
-def invoke(payload):
-    user_input = payload.get("prompt")
-    agent = AWSCostEstimatorAgent()
-    return agent.estimate_costs(user_input)
+async def invoke(payload, context):
+    """AgentCore Runtime entrypoint with streaming response."""
+    agent = get_or_create_agent()
+    async for event in agent.stream(prompt):
+        # ... handle deltas and yield
+```
 
-if __name__ == "__main__":
-    app.run()
+### Parsing Server-Sent Events
+
+Because the entrypoint yields text deltas, the `InvokeAgentRuntime` response is **Server-Sent Events** (`text/event-stream`) rather than JSON. Each `data: "<string>"` line has to be decoded with `json.loads` and concatenated.
+
+```python
+# 02_runtime/invoke_agent.py
+response = client.invoke_agent_runtime(
+    agentRuntimeArn=agent_arn,
+    runtimeSessionId=session_id,
+    contentType="application/json",
+    payload=json.dumps({"prompt": prompt}).encode(),
+    qualifier="DEFAULT",
+)
+
+for line in response["response"].iter_lines():
+    if not line:
+        continue
+    decoded = line.decode("utf-8")
+    if not decoded.startswith("data: "):
+        continue
+    print(json.loads(decoded[len("data: "):]), end="", flush=True)
 ```
 
 ## Usage Example
 
-```python
-# Prepare agent for deployment
-preparer = AgentPreparer("../01_code_interpreter/cost_estimator_agent")
-configure_command = preparer.prepare()
+```bash
+# One-off estimate
+uv run python invoke_agent.py --agent-arn <runtime-arn> \
+    --prompt "Estimate the monthly cost of storing 10GB in S3 in us-west-2."
 
-# Use generated command to deploy
-# agentcore configure --entrypoint ./deployment/invoke.py ...
-# agentcore deploy
-# agentcore invoke '{"prompt": "Cost for t3.micro EC2?"}'
+# Continue the conversation in a specific session
+uv run python invoke_agent.py --agent-arn <runtime-arn> \
+    --session-id <33+ character ID> --prompt "What if I stop it at night?"
+```
+
+`--demo-session` makes three calls to show what a session buys you.
+
+```
+[1] session=15497370-...  → t3.nano estimate
+[2] same session          → It was **t3.nano**.
+[3] new session           → I do not retain conversation history.
 ```
 
 ## Integration Benefits
 
-- **Automated setup** - Handles deployment directory and IAM role creation
-- **Permission compliance** - Follows official AgentCore runtime permissions
-- **CLI integration** - Seamless workflow with agentcore toolkit
-- **Error handling** - Comprehensive logging and error management
+- **One-command deploy** - `agentcore deploy` covers IAM role creation through Runtime creation
+- **Declarative configuration** - everything needed lives in `agentcore.json`, no arguments to memorize
+- **Infrastructure as Code** - managed by the CDK / CloudFormation, so resources are created and deleted as a stack
+- **No Docker required** - the `CodeZip` build packages the code as a zip and uploads it to S3
 
 ## References
 
-- [AgentCore Runtime Developer Guide](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/runtime.html)
+- [AgentCore Runtime Developer Guide](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/agents-tools-runtime.html)
+- [Get started with the AgentCore CLI](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/runtime-get-started-cli.html)
 - [Runtime Permissions Documentation](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/runtime-permissions.html)
-- [Bedrock AgentCore Starter Toolkit](https://github.com/aws/bedrock-agentcore-starter-toolkit)
-- [AgentCore CLI Documentation](https://github.com/aws/bedrock-agentcore-starter-toolkit)
+- [boto3 invoke_agent_runtime](https://docs.aws.amazon.com/boto3/latest/reference/services/bedrock-agentcore/client/invoke_agent_runtime.html)
+- [AgentCore CLI](https://github.com/aws/agentcore-cli)
 
 ---
 
-**Next Steps**: Deploy your prepared agent using the generated `agentcore` commands and continue with [03_memory](../03_memory/README.md) to add context-aware capabilities to your agents.
+**Next Steps**: Integrate the deployed agent into your application and continue with [03_memory](../03_memory/README.md) to add context-aware capabilities to your agents.

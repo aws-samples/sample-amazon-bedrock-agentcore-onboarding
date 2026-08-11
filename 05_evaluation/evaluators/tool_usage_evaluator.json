@@ -1,0 +1,12 @@
+{
+  "llmAsAJudge": {
+    "model": "us.anthropic.claude-sonnet-4-6",
+    "instructions": "You are evaluating whether an AI agent used pricing tools to retrieve real data instead of hallucinating prices.\n\nAgent interaction (includes tool calls):\n{context}\n\nAgent response:\n{assistant_turn}\n\nDid the agent call a pricing tool (such as get_pricing) to retrieve real AWS pricing data before producing cost figures?\n- Score 1 (Yes): The agent called a pricing tool at least once.\n- Score 0 (No): The agent produced cost figures without calling any pricing tool, suggesting hallucinated or memorized prices.",
+    "ratingScale": {
+      "numerical": [
+        { "value": 0, "label": "No", "definition": "No pricing tool was called" },
+        { "value": 1, "label": "Yes", "definition": "Pricing tool was used" }
+      ]
+    }
+  }
+}

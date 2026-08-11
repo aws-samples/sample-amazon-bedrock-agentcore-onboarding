@@ -10,7 +10,7 @@ Amazon Bedrock AgentCore is a comprehensive platform for building, deploying, an
 
 ### What You'll Learn
 
-**Foundation (01–05)** — Build a reliable agent
+**Foundation** — Build a reliable agent
 - **Code Interpreter**: Secure sandboxed execution for dynamic calculations and data processing
 - **Runtime**: Scalable agent deployment and management in AWS cloud infrastructure
 - **Memory**: Short-term and long-term memory capabilities for context-aware agent interactions
@@ -37,9 +37,9 @@ Following our **Amazon Bedrock AgentCore Implementation Principle**, every examp
 
 ## Hands-On Learning Path
 
-### 🚀 Foundation (01–05) — Build a reliable agent
+### 🚀 Foundation — Build a reliable agent
 
-1. **[Code Interpreter](01_code_interpreter/README.md)** - Start here for foundational agent development
+1. **[Code Interpreter](agents/CostEstimatorAgent/app/CostEstimatorAgent/README.md)** - Start here for foundational agent development
    - Build an AWS cost estimator with secure Python execution
    - Learn AgentCore basics with immediate, practical results
    - **Time**: ~10 minutes | **Difficulty**: Beginner
@@ -96,7 +96,7 @@ Following our **Amazon Bedrock AgentCore Implementation Principle**, every examp
 ### 🎯 Focused Learning (By Use Case)
 
 **Building Your First Agent**
-→ Start with [01_code_interpreter](01_code_interpreter/README.md)
+→ Start with [agents/CostEstimatorAgent](agents/CostEstimatorAgent/app/CostEstimatorAgent/README.md)
 
 **Production-Ready Agent**
 → [02_runtime](02_runtime/README.md) → [03_memory](03_memory/README.md) → [04_observability](04_observability/README.md) → [05_evaluation](05_evaluation/README.md)
@@ -105,15 +105,18 @@ Following our **Amazon Bedrock AgentCore Implementation Principle**, every examp
 → [06_identity](06_identity/README.md) → [07_gateway](07_gateway/README.md) → [08_policy](08_policy/README.md)
 
 **End-to-End Automation**
-→ [01_code_interpreter](01_code_interpreter/README.md) → [07_gateway](07_gateway/README.md) → [09_browser_use](09_browser_use/README.md)
+→ [agents/CostEstimatorAgent](agents/CostEstimatorAgent/app/CostEstimatorAgent/README.md) → [07_gateway](07_gateway/README.md) → [09_browser_use](09_browser_use/README.md)
 
 ## Prerequisites
 
 ### System Requirements
-- **Python 3.11+** with `uv` package manager
+- **Python 3.12+** with `uv` package manager
 - **AWS CLI** configured with appropriate permissions
 - **AWS Account** with access to Bedrock AgentCore (Preview)
 - **Amazon Bedrock** with model access to necessary models
+- **Node.js 20+** and the **AgentCore CLI** (`npm install -g @aws/agentcore`)
+- **AWS CDK** — used internally by `agentcore deploy`. Run `cdk bootstrap` once per target region
+- **AWS SAM CLI** — required to deploy the Lambda in 07_gateway
 
 
 ### Quick Setup
@@ -125,6 +128,13 @@ cd sample-amazon-bedrock-agentcore-onboarding
 
 # Install dependencies
 uv sync
+
+# Install the AgentCore CLI
+npm install -g @aws/agentcore
+agentcore --version
+
+# Bootstrap the CDK (once per region)
+cdk bootstrap
 
 # Verify AWS configuration
 aws sts get-caller-identity
@@ -155,32 +165,69 @@ You can use one click environmental setup on AWS (it costs for AWS service usage
 
 ### 🧹 **Important: Clean Up AWS Resources**
 
-To avoid ongoing charges, clean up resources after completing the hands-on exercises. **Clean up in reverse order (09→02) due to dependencies**:
+To avoid ongoing charges, clean up resources after completing the hands-on exercises.
+
+Remove CLI-managed resources with `agentcore remove all`, then apply the removal to AWS with
+`agentcore deploy`. **`remove` alone leaves the AWS resources in place.** Exercises that also
+own resources outside the CLI's scope (Cognito, Lambda, browser sessions) — 06, 07, 08, 09 —
+ship a `clean_resources.py` that handles both.
+**Clean up in reverse order (09→02) due to dependencies**:
 
 ```bash
-# 1. Stop active browser sessions
-uv run python 09_browser_use/clean_resources.py
+# 1. Browser Use — stop active browser sessions
+cd 09_browser_use && uv run python clean_resources.py && cd ..
 
-# 2. Remove policy engine and Cognito resources
-uv run python 08_policy/clean_resources.py
+# 2. Policy — Cedar policy, policy engine, demo scopes
+cd 08_policy && uv run python clean_resources.py && cd ..
 
-# 3. Clean up Gateway resources (uses SAM CLI)
-cd 07_gateway
-sam delete  # Deletes Lambda function and associated resources
-uv run python clean_resources.py
-cd ..
+# 3. Gateway — gateway / target / credential and the Lambda stack
+cd 07_gateway && uv run python clean_resources.py --force && cd ..
 
-# 4. Clean up Identity resources
-uv run python 06_identity/clean_resources.py
+# 4. Identity — the two runtimes and credential provider 06 added, plus Cognito
+#    (Lab 2's agent survives)
+cd 06_identity && uv run python clean_resources.py --force && cd ..
 
-# 5. Remove evaluation configs
-uv run python 05_evaluation/clean_resources.py
+# 5. Evaluation — evaluator and online eval config (keeps the runtime)
+cd agents/MyCostEstimatorAgent
+agentcore remove online-eval --name cost_estimator_online_eval -y
+agentcore remove evaluator --name cost_estimator_tool_usage -y
+agentcore deploy
+cd ../..
 
-# 6. Clean up Memory resources
-uv run python 03_memory/clean_resources.py
+# 6. Memory — remove only the memory added to Lab 2's project
+cd agents/MyCostEstimatorAgent
+agentcore remove memory --name MyCostEstimatorAgentMemory -y && agentcore deploy
+cd ../..
 
-# 7. Clean up Runtime resources
-uv run python 02_runtime/clean_resources.py
+# 7. Runtime — the base agent (last step only)
+cd agents/MyCostEstimatorAgent
+agentcore remove all -y && agentcore deploy
+cd .. && rm -r MyCostEstimatorAgent && cd ..
+```
+
+`agentcore remove all` empties every declaration in the project. `agents/MyCostEstimatorAgent`
+is shared by exercises 02, 03, 05, and 06, so use it **only as the final step**. Mid-sequence,
+remove resources by name with `agentcore remove <kind> --name <name>`.
+
+The scripts for 07 and 06 require `--force` because later exercises depend on their resources.
+Each script verifies the deletion with `list-*` API calls and reports the outcome as
+`✅` or `⚠️`.
+
+Exercises 01 and 04 create no cloud resources of their own — 01 runs locally and 04 only
+observes 02's runtime. Everything in 02, 03, and 05 is managed by the AgentCore CLI, so no
+script is needed there.
+
+Verify everything is gone:
+
+```bash
+aws cloudformation list-stacks \
+  --stack-status-filter CREATE_COMPLETE UPDATE_COMPLETE REVIEW_IN_PROGRESS \
+  --query 'StackSummaries[?starts_with(StackName,`AgentCore-My`)].[StackName,StackStatus]'
+aws bedrock-agentcore-control list-agent-runtimes \
+  --query 'agentRuntimes[?starts_with(agentRuntimeName,`My`)].agentRuntimeName'
+aws bedrock-agentcore-control list-memories --query 'memories[?starts_with(id,`My`)].id'
+aws cognito-idp list-user-pools --max-results 20 \
+  --query 'UserPools[?starts_with(Name,`agentcore-cost-estimator`)].Name'
 ```
 
 ## Getting Help

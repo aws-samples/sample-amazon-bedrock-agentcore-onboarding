@@ -1,2 +1,3 @@
-cost_estimator_agent
+__pycache__/
+*.pyc
 _implementation.md

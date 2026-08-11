@@ -1,149 +1,182 @@
 """
-Test the AgentCore Identity by invoking cost_estimator_agent_with_identity
+Verify inbound and outbound auth on the deployed AgentCore Runtime.
 
-This script demonstrates how to:
-1. Obtain an OAuth token from AgentCore Identity
-2. Call the Runtime with obtained token
+Inbound auth
+------------
+The Runtime is declared with ``--authorizer-type CUSTOM_JWT``, so AgentCore
+validates the caller's JWT before the agent code runs. This script proves it by
+invoking twice: once without a token (expect AccessDeniedException) and once
+with a Cognito access token (expect success).
+
+boto3's ``invoke_agent_runtime`` has no parameter for a bearer token, so the
+token is injected with a ``before-send`` hook, which also skips SigV4 signing.
+
+Outbound auth
+-------------
+The second invocation asks the agent to add two numbers. The agent cannot do
+this itself — it has to call a JWT-protected MCP server. It obtains that token
+from AgentCore Identity inside the Runtime, using the credential provider
+declared with ``agentcore add credential``. Look for
+``Bedrock AgentCore.GetResourceOauth2Token`` in ``agentcore logs`` afterwards.
+
+Usage:
+    uv run python test_identity_agent.py
+    uv run python test_identity_agent.py --prompt 'What is 17 plus 25? Use the tool.'
 """
 
-import json
-import base64
-import logging
 import argparse
-import asyncio
+import json
+import logging
+import uuid
 from pathlib import Path
-from datetime import datetime, timezone
-import requests
-from strands import Agent
-from strands import tool
-from bedrock_agentcore.identity.auth import requires_access_token
 
-# Configure logging with more verbose output
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+import boto3
+import requests
+from botocore.exceptions import ClientError
+
+logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 
-
 CONFIG_FILE = Path("inbound_authorizer.json")
-OAUTH_PROVIDER = ""
-OAUTH_SCOPE = ""
-RUNTIME_URL = ""
-BASE64_BLOCK_SIZE = 4 # Base64 encoding processes data in 4-character blocks
-with CONFIG_FILE.open('r') as f:
-    config = json.load(f)
-    OAUTH_PROVIDER = config["provider"]["name"]
-    OAUTH_SCOPE = config["cognito"]["scope"]
-    RUNTIME_URL = config["runtime"]["url"]
+PROJECT_DIR = Path("../agents/MyCostEstimatorAgent")
+AGENT_RUNTIME_NAME = "MySecureAgent"
+
+DEFAULT_PROMPT = "What is 17 plus 25? Use the tool."
 
 
-def log_jwt_token_details(access_token: str) -> None:
+def load_cognito() -> dict:
+    """Read the Cognito settings written by setup_cognito.py."""
+    if not CONFIG_FILE.exists():
+        raise SystemExit(
+            f"{CONFIG_FILE} not found. Run `uv run python setup_cognito.py` first."
+        )
+    with CONFIG_FILE.open() as f:
+        return json.load(f)["cognito"]
+
+
+def load_runtime_arn(project_dir: Path, runtime_name: str) -> str:
+    """Read a Runtime ARN from agentcore/.cli/deployed-state.json."""
+    state_path = project_dir / "agentcore" / ".cli" / "deployed-state.json"
+    if not state_path.exists():
+        raise SystemExit(
+            f"{state_path} not found. Run `agentcore deploy` in the project directory first."
+        )
+    with state_path.open() as f:
+        state = json.load(f)
+
+    for target in state.get("targets", {}).values():
+        runtimes = target.get("resources", {}).get("runtimes", {})
+        if runtime_name in runtimes:
+            return runtimes[runtime_name]["runtimeArn"]
+
+    raise SystemExit(f"Runtime '{runtime_name}' not found. Run `agentcore deploy` first.")
+
+
+def get_access_token(cognito: dict) -> str:
+    """Get a Cognito access token with the client-credentials (M2M) flow.
+
+    This is the caller's side of inbound auth. AgentCore Identity is not
+    involved here — the client talks to the authorization server directly.
     """
-    Log JWT token contents for debugging purposes using Base64 decoding.
-    
-    Args:
-        access_token: JWT access token
-    
-    Note:
-        JWT tokens consist of three parts (header, payload, signature).
-        For security reasons, the signature part is not decoded.
-    """
-    # Parse and log JWT token parts for debugging
-    token_parts = access_token.split(".")
-    for i, part in enumerate(token_parts[:2]):  # Only decode header and payload, not signature
-        try:
-            # Add padding if needed (JWT Base64 encoding may omit trailing '=' characters)
-            num_padding_chars = BASE64_BLOCK_SIZE - (len(part) % BASE64_BLOCK_SIZE)
-            if num_padding_chars != BASE64_BLOCK_SIZE:
-                part_for_decode = part + '=' * num_padding_chars
-            else:
-                part_for_decode = part
-
-            decoded = base64.b64decode(part_for_decode)
-            logger.info(f"\tToken part {i}: {json.loads(decoded.decode())}")
-        except Exception as e:
-            logger.error(f"\t❌ Failed to decode token part {i}: {e}")
-
-
-# Internal function with authentication decorator
-@requires_access_token(
-    provider_name=OAUTH_PROVIDER,
-    scopes=[OAUTH_SCOPE],
-    auth_flow="M2M",
-    force_authentication=False
-)
-async def _cost_estimator_with_auth(architecture_description: str, access_token: str = None) -> str:
-    """Internal function that handles the actual API call with authentication"""
-    session_id = f"runtime-with-identity-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')}"
-
-    if access_token:
-        logger.info("✅ Successfully load the access token from AgentCore Identity!")
-        # Parse and log JWT token parts for debugging
-        log_jwt_token_details(access_token)
-
-    headers = {
-        "Authorization": f"Bearer {access_token}",
-        "Content-Type": "application/json",
-        "X-Amzn-Bedrock-AgentCore-Runtime-Session-Id": session_id,
-        "X-Amzn-Trace-Id": session_id,
-    }
-
+    token_url = f"https://{cognito['domain']}.auth.{cognito['region']}.amazoncognito.com/oauth2/token"
     response = requests.post(
-        RUNTIME_URL,
-        headers=headers,
-        data=json.dumps({"prompt": architecture_description})
+        token_url,
+        data={
+            "grant_type": "client_credentials",
+            "client_id": cognito["client_id"],
+            "client_secret": cognito["client_secret"],
+            "scope": cognito["scope"],
+        },
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        timeout=30,
+    )
+    response.raise_for_status()
+    token = response.json()["access_token"]
+    logger.info("✅ Access token obtained (scope: %s)", cognito["scope"])
+    return token
+
+
+def invoke(runtime_arn: str, prompt: str, region: str, bearer_token: str = "") -> str:
+    """Invoke the Runtime, optionally with a bearer token.
+
+    For a Runtime with customJWTAuthorizer, AgentCore expects the JWT in an
+    `Authorization: Bearer` header instead of SigV4. boto3 has no parameter for
+    it, so the header is injected on the wire.
+    """
+    client = boto3.client("bedrock-agentcore", region_name=region)
+
+    if bearer_token:
+        def _inject_bearer(request, **_):
+            request.headers["Authorization"] = f"Bearer {bearer_token}"
+
+        client.meta.events.register(
+            "before-send.bedrock-agentcore.InvokeAgentRuntime", _inject_bearer
+        )
+
+    response = client.invoke_agent_runtime(
+        agentRuntimeArn=runtime_arn,
+        qualifier="DEFAULT",
+        payload=json.dumps({"prompt": prompt}),
+        runtimeSessionId=f"identity-verification-{uuid.uuid4()}",
     )
 
-    response.raise_for_status()
-    return response.text
+    chunks = []
+    for line in response["response"].iter_lines():
+        if not line:
+            continue
+        text = line.decode("utf-8")
+        if text.startswith("data: "):
+            chunks.append(json.loads(text[6:]))
+    return "".join(chunks)
 
 
-# Tool function exposed to LLM (without access_token parameter)
-@tool(
-    name="cost_estimator_tool",
-    description="Estimate cost of AWS from architecture description"
-)
-async def cost_estimator_tool(architecture_description: str) -> str:
-    """
-    Estimate AWS costs based on architecture description.
-
-    Args:
-        architecture_description: Description of the AWS architecture to estimate costs for
-
-    Returns:
-        Cost estimation result as a string
-    """
-    # Call the internal function with authentication
-    # We call internal function to conceal access token argument from agent
-    return await _cost_estimator_with_auth(architecture_description)
-
-
-async def main():
-    """Main test function"""
-    # Parse command line arguments
-    parser = argparse.ArgumentParser(description='Test AgentCore Gateway with different methods')
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        description="Verify inbound and outbound auth on the secured Runtime",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=__doc__,
+    )
     parser.add_argument(
-        '--architecture',
-        type=str,
-        default="A simple web application with an Application Load Balancer, 2 EC2 t3.medium instances, and an RDS MySQL database in us-east-1.",
-        help='Architecture description for cost estimation. Default: A simple web application with ALB, 2 EC2 instances, and RDS MySQL'
+        "--prompt",
+        default=DEFAULT_PROMPT,
+        help="Prompt to send. The agent answers in the prompt's language",
     )
     args = parser.parse_args()
 
-    agent = Agent(
-        system_prompt=(
-            "You are a professional solution architect. "
-            "You will receive architecture descriptions or requirements from customers. "
-            "Please provide estimate by using 'cost_estimator_tool'"
-        ),
-        tools=[cost_estimator_tool]
-    )
+    cognito = load_cognito()
+    region = cognito["region"]
+    runtime_arn = load_runtime_arn(PROJECT_DIR, AGENT_RUNTIME_NAME)
+    logger.info("Runtime ARN: %s", runtime_arn)
 
-    logger.info("Invoke agent that calls Runtime with Identity...")
-    await agent.invoke_async(args.architecture)
-    logger.info("✅ Successfully called agent!")
+    print("=" * 70)
+    print("[1] Inbound auth — invoke WITHOUT a token (expect denial)")
+    print("=" * 70)
+    try:
+        invoke(runtime_arn, args.prompt, region)
+        print("⚠️ Unexpected success. The Runtime should require a JWT.")
+    except ClientError as e:
+        print(f"✅ Rejected as expected: {e.response['Error']['Code']}")
+
+    print()
+    print("=" * 70)
+    print("[2] Inbound auth — invoke WITH a Cognito token")
+    print("=" * 70)
+    token = get_access_token(cognito)
+    result = invoke(runtime_arn, args.prompt, region, bearer_token=token)
+    print(result)
+
+    print()
+    print("=" * 70)
+    print("[3] Outbound auth — how the answer was produced")
+    print("=" * 70)
+    print("The agent could not add the numbers itself; it called the MCP server.")
+    print("To see AgentCore Identity issuing that token, run:")
+    print()
+    print("  agentcore logs --runtime MySecureAgent --since 10m \\")
+    print("    | grep -E 'GetResourceOauth2Token|MCP call'")
+
+    return 0
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    raise SystemExit(main())

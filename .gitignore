@@ -212,3 +212,6 @@ a1_custom/*
 !a1_custom/README.md
 !a1_custom/README_ja.md
 !a1_custom/.kiro
+
+# Lab 9 saves per-step screenshots at runtime
+09_browser_use/screenshots/

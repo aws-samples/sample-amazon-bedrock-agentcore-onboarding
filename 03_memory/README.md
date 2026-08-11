@@ -2,187 +2,348 @@
 
 [English](README.md) / [日本語](README_ja.md)
 
-This implementation demonstrates **AgentCore Memory** capabilities through a cost estimation agent that uses both short-term and long-term memory. The demo integrates the same `AWSCostEstimatorAgent` from Lab 01 (Code Interpreter + MCP pricing) with AgentCore Memory for a real end-to-end workflow.
+This implementation demonstrates **AgentCore Memory** capabilities that enhance the AWS cost estimator with both short-term and long-term memory. The Memory resource is declared in `agentcore.json` and created by `agentcore deploy`; wiring it into the Strands Agents **session manager** is enough to get short-term persistence and long-term retrieval automatically.
 
 ## Process Overview
 
 ```mermaid
 sequenceDiagram
     participant User as User
-    participant Agent as AgentWithMemory
-    participant Estimator as Cost Estimator
+    participant Runtime as AgentCore Runtime
+    participant SM as Session Manager
     participant Memory as AgentCore Memory
-    participant Bedrock as Amazon Bedrock
+    participant Agent as Cost Estimator
 
-    Note over User,Memory: Step 1: Store estimates (short-term memory)
-    User->>Agent: estimate("t3.micro + EBS")
-    Agent->>Estimator: AWSCostEstimatorAgent
-    Estimator-->>Agent: Cost results
-    Agent->>Memory: create_event() → SHORT-TERM MEMORY
-    Memory-->>Agent: Event stored
+    Note over User,Agent: Session A — first estimate
+    User->>Runtime: Estimate request + preferences
+    Runtime->>SM: session_id / actor_id
+    SM->>Memory: Retrieve long-term insights
+    Memory-->>SM: (empty on first run)
+    SM->>Agent: Prompt
     Agent-->>User: Cost estimate
+    SM->>Memory: CreateEvent (SHORT TERM MEMORY)
+    Memory-->>Memory: (Automatic update of LONG TERM MEMORY)
 
-    Note over User,Memory: Step 2: Compare using short-term memory
-    User->>Agent: compare("my estimates")
-    Agent->>Memory: list_events() → SHORT-TERM MEMORY
-    Memory-->>Agent: Historical estimates
-    Agent->>Bedrock: Generate comparison
-    Bedrock-->>Agent: Comparison analysis
-    Agent-->>User: Side-by-side comparison
+    Note over User,Agent: Session A — same session_id
+    User->>Runtime: "What did I just estimate?"
+    SM->>Memory: ListEvents (from SHORT TERM MEMORY)
+    Memory-->>SM: Conversation history
+    Agent-->>User: Answers without calling tools
 
-    Note over User,Memory: Step 3: Propose using long-term memory
-    User->>Agent: propose("best architecture")
-    Agent->>Memory: retrieve_memories() → LONG-TERM MEMORY
-    Memory-->>Agent: User preferences
-    Agent->>Bedrock: Generate proposal
-    Bedrock-->>Agent: Personalized recommendation
-    Agent-->>User: Architecture proposal
+    Note over User,Agent: Session B — new session, same actor_id
+    User->>Runtime: "Propose based on my preferences"
+    SM->>Memory: RetrieveMemoryRecords (from LONG TERM MEMORY)
+    Memory-->>SM: User preferences and facts
+    SM->>Agent: Prompt with injected context
+    Agent-->>User: Personalized proposal
 ```
 
 ## Prerequisites
 
-1. **Cost Estimator deployed** - Complete `01_code_interpreter` setup first
-2. **AWS credentials** - With `bedrock-agentcore-control` and `bedrock:InvokeModel` permissions
-3. **Dependencies** - Installed via `uv` (see pyproject.toml)
+1. **Runtime deployment understood** - Complete the `02_runtime` setup first
+2. **AWS credentials** - with `bedrock-agentcore-control` and `bedrock:InvokeModel` permissions
+3. **Node.js** - required by the CDK (used by `agentcore deploy`)
+4. **AgentCore CLI** - `npm install -g @aws/agentcore`
+5. **Dependencies** - installed via `uv` (see pyproject.toml)
 
 ## How to use
 
 ### File Structure
 
+`agents/` holds only the base `CostEstimatorAgent`. Lab-specific differences live in `agent/` and are **layered on top of** the base.
+
 ```
 03_memory/
-├── README.md                      # This documentation
-└── test_memory.py                 # Main implementation and test suite
+├── README.md                      # This document
+├── agent/                         # Lab 3 code layered over the base
+│   ├── main.py                    # Entrypoint resolving session_id / actor_id (overwrites)
+│   ├── cost_estimator_agent.py    # Facade building one Agent per (session, actor) (overwrites)
+│   └── memory_session.py          # Session manager bridging Memory and Strands (adds)
+└── test_memory.py                 # Verifies short-term, long-term memory and actor isolation
 ```
 
-### Step 1: Run the Demo
+`config.py`, `__init__.py`, `pyproject.toml` and `iam_policies/` are inherited from the base.
+
+### Step 1: Add memory to the existing project
+
+Add memory to `MyCostEstimatorAgent`, the project deployed in Lab 2. No new project is created.
 
 ```bash
-cd 03_memory
-uv run python test_memory.py
+cd ../agents/MyCostEstimatorAgent
+agentcore add memory \
+    --name MyCostEstimatorAgentMemory \
+    --strategies SEMANTIC,USER_PREFERENCE,SUMMARIZATION,EPISODIC
 ```
 
-This runs 3 steps sequentially:
-1. **Estimate** x2 — generates cost estimates using `AWSCostEstimatorAgent`, stores as short-term memory events via `create_event()`
-2. **Compare** — retrieves events via `list_events()` and generates comparison
-3. **Propose** — retrieves extracted preferences via `retrieve_memories()` for personalized recommendation
+This declares four memory strategies, each with its namespace templates, under `memories[]`
+in `agentcore.json`.
 
-On first run, memory creation takes ~3 minutes. Subsequent runs reuse existing memory (instant).
+| Strategy | namespaceTemplates |
+|---|---|
+| `SEMANTIC` | `/users/{actorId}/facts` |
+| `USER_PREFERENCE` | `/users/{actorId}/preferences` |
+| `SUMMARIZATION` | `/summaries/{actorId}/{sessionId}` |
+| `EPISODIC` | `/episodes/{actorId}/{sessionId}` (reflection: `/episodes/{actorId}`) |
 
-### Step 2: Force Recreation (Clean Start)
+> For a brand-new project, `agentcore create --memory longAndShortTerm` declares the same four
+> strategies up front. `--memory` accepts `none`, `shortTerm`, or `longAndShortTerm`.
+
+### Step 2: Place the base + overlay and deploy
 
 ```bash
-cd 03_memory
-uv run python test_memory.py --force
+cd ../
+python setup.py --target MyCostEstimatorAgent --overlay ../03_memory/agent
 ```
 
-Deletes existing memory and creates a fresh instance. Use this for a clean start.
+Output:
+
+```
+📁 Copying base agent: CostEstimatorAgent → MyCostEstimatorAgent
+   __init__.py, config.py, cost_estimator_agent.py, main.py, pyproject.toml
+🧩 Applying overlay: 03_memory/agent
+   cost_estimator_agent.py, main.py, memory_session.py
+🔧 Configuring additionalPolicies: [...]
+```
+
+```bash
+cd MyCostEstimatorAgent/app/MyCostEstimatorAgent
+uv sync
+cd ../..
+agentcore deploy
+```
+
+CDK creates the memory and injects its ID as the `MEMORY_MYCOSTESTIMATORAGENTMEMORY_ID`
+environment variable. `memory_session.py` looks for any variable starting with `MEMORY_`, so
+renaming the memory needs no code change.
+
+### Step 3: Verify the Memory Behaviour
+
+```bash
+cd ../../03_memory
+uv run python test_memory.py \
+    --agent-arn <runtime-arn> \
+    --memory-id <memory-id>
+```
+
+The script runs three phases in order (use `--phase short|long|isolation` to run one).
+
+1. **Short-term memory** - two turns in the same session; the agent recalls the previous estimate without calling any tool
+2. **Long-term memory** - a new session asks a preference-dependent question; Graviton and the budget carry over
+3. **Actor isolation** - a different `actor_id` cannot see that long-term memory
+
+Long-term extraction is asynchronous. The script polls for records for up to `--wait` seconds (300 by default).
+
+Note that `runtimeSessionId` must be at least 33 characters — a shorter value fails with `Value at 'runtimeSessionId' failed to satisfy constraint` — so the script uses UUIDs.
+
+### Step 4: Clean Up
+
+Labs 4 and 5 use the runtime, so keep it and remove only the memory. Mirror the way it was
+added: `remove memory`, then `deploy`.
+
+```bash
+cd ../agents/MyCostEstimatorAgent
+agentcore remove memory --name MyCostEstimatorAgentMemory
+agentcore deploy
+```
+
+**`remove` alone leaves the AWS resources in place.**
+
+Verify the deletion:
+
+```bash
+aws bedrock-agentcore-control list-memories \
+  --query 'memories[?starts_with(id,`MyCostEstimatorAgent`)].id'
+aws bedrock-agentcore-control list-agent-runtimes \
+  --query 'agentRuntimes[?starts_with(agentRuntimeName,`MyCostEstimatorAgent`)].agentRuntimeName'
+```
+
+The memory list should be `[]` while the runtime remains. Removing the memory drops the
+`MEMORY_*_ID` variable, so the session manager goes inactive and the agent behaves like
+Lab 2's memory-less version again.
+
+`test_memory.py` options:
+
+| Flag | Description | Default |
+|---|---|---|
+| `--agent-arn` | Runtime ARN (see `agentcore status`) | required |
+| `--memory-id` | Memory ID (see `agentcore status`) | required |
+| `--actor-id` | Actor that owns the memory | `user-alice` |
+| `--other-actor-id` | Actor used for the isolation check | `user-bob` |
+| `--region` | AWS region | from the profile |
+| `--wait` | Seconds to wait for asynchronous long-term extraction | 300 |
+| `--phase` | Which phase to run (`all` / `short` / `long` / `isolation`) | `all` |
+
+Each phase's prompt can be overridden. The agent answers in the language of the prompt, so
+these are how the verification runs in another language.
+
+| Flag | Phase |
+|---|---|
+| `--prompt-estimate` | [1] Ask for an estimate and state a general preference |
+| `--prompt-recall` | [2] Ask about the previous estimate in the same session |
+| `--prompt-preference` | [3] State the preferences long-term memory should extract |
+| `--prompt-long-term` | [5] Preference-dependent question in a new session |
+| `--prompt-isolation` | [6] Same question asked as a different actor |
 
 ## Key Implementation Patterns
 
-### Memory-Enhanced Agent
+### The Session Manager Calls the Memory APIs for You
+
+Passing the `AgentCoreMemorySessionManager` from `memory_session.py` to `Agent` wires the Memory APIs through Strands hooks. `CreateEvent` and `RetrieveMemoryRecords` never appear in the agent code.
+
+| When | API called | Purpose |
+|---|---|---|
+| Session start | `ListEvents` | Restore the conversation for this session (short-term) |
+| Each user turn | `RetrieveMemoryRecords` | Search long-term memory and inject `<user_context>` |
+| Each message added | `CreateEvent` | Persist to short-term memory; triggers async extraction |
 
 ```python
-class AgentWithMemory:
-    def __init__(self, actor_id: str, region: str = "us-west-2", force_recreate: bool = False):
-        # Initialize AgentCore Memory with user preference strategy
-        self.memory = self.memory_client.create_memory_and_wait(
-            name="cost_estimator_memory",
-            strategies=[{
-                "userPreferenceMemoryStrategy": {
-                    "name": "UserPreferenceExtractor",
-                    "description": "Extracts user preferences for AWS architecture decisions",
-                    "namespaceTemplates": ["/actor/{actorId}/preferences/"]
-                }
-            }],
-            event_expiry_days=7,
-        )
-```
+# 03_memory/agent/memory_session.py
+def get_memory_session_manager(session_id, actor_id):
+    memory_id = resolve_memory_id()
+    if not memory_id:
+        return None
 
-### Context Manager Pattern
+    retrieval_config = {
+        f"/users/{actor_id}/facts": RetrievalConfig(top_k=3, relevance_score=0.3),
+        f"/users/{actor_id}/preferences": RetrievalConfig(top_k=3, relevance_score=0.3),
+    }
 
-```python
-memory_agent = AgentWithMemory(actor_id="user123")
-with memory_agent as agent:
-    # Step 1-2: Estimate and compare (short-term memory)
-    agent("estimate: t3.nano")
-    agent("estimate: t3.micro + EBS")
-    agent("compare my estimates")
-
-    # Step 3: Propose using long-term memory (retrieve_memories)
-    agent("propose best architecture")
-```
-
-### Memory Storage Pattern
-
-```python
-@tool
-def estimate(self, architecture_description: str) -> str:
-    # Use the Cost Estimator Agent (Code Interpreter + MCP pricing)
-    cost_estimator = AWSCostEstimatorAgent(region=self.region)
-    result = cost_estimator.estimate_costs(architecture_description)
-
-    # Store interaction → triggers async preference extraction
-    self.memory_client.create_event(
-        memory_id=self.memory_id,
-        actor_id=self.actor_id,
-        session_id=self.session_id,
-        messages=[
-            (architecture_description, "USER"),
-            (result, "ASSISTANT")
-        ]
+    return AgentCoreMemorySessionManager(
+        AgentCoreMemoryConfig(
+            memory_id=memory_id,
+            session_id=session_id,
+            actor_id=actor_id,
+            retrieval_config=retrieval_config,
+            async_mode=True,
+        ),
+        os.environ.get("AWS_REGION"),
     )
-    return result
 ```
+
+### Resolving the Memory ID from the Environment
+
+`agentcore deploy` creates the Memory and injects its ID as `MEMORY_<NAME>_ID`. The CLI scaffold hard-codes that name; this implementation discovers any `MEMORY_*_ID` variable so the code does not depend on the project name.
+
+```python
+def resolve_memory_id() -> Optional[str]:
+    """Resolve the Memory ID injected by agentcore deploy."""
+    explicit = os.environ.get("AGENTCORE_MEMORY_ID")
+    if explicit:
+        return explicit
+    for key, value in os.environ.items():
+        if key.startswith("MEMORY_") and key.endswith("_ID") and value:
+            return value
+    return None
+```
+
+### One Agent per (session, actor)
+
+The session manager is bound to a session, so each session needs its own `Agent`. The MCP client and the Code Interpreter session are expensive to create, so they stay shared.
+
+```python
+# 03_memory/agent/cost_estimator_agent.py
+class AWSCostEstimatorAgent:
+    def _initialize(self) -> None:
+        # Shared resources: built once
+        pricing_tools = self._prepare_pricing_tools()
+        self._prepare_code_interpreter()
+        self._tools = pricing_tools + [self._prepare_cost_calculation_tool()]
+
+    def agent_for(self, session_id, actor_id) -> Agent:
+        # Agent: built and cached per (session, actor)
+        key = (session_id, actor_id)
+        if key not in self._agents:
+            self._agents[key] = Agent(
+                model=self._load_model(),
+                system_prompt=SYSTEM_PROMPT,
+                tools=self._tools,
+                session_manager=get_memory_session_manager(session_id, actor_id),
+                conversation_manager=NullConversationManager(),
+            )
+        return self._agents[key]
+```
+
+### actor_id Comes from the Payload
+
+`agentcore invoke --user-id` travels as the `X-Amzn-Bedrock-AgentCore-Runtime-User-Id` header, which the Runtime does not forward to agent code, so `context.user_id` is empty. `main.py` therefore also accepts `actor_id` in the payload.
+
+```python
+# 03_memory/agent/main.py
+def _resolve_actor_id(payload: dict, context) -> str:
+    return (
+        getattr(context, "user_id", None)
+        or payload.get("actor_id")
+        or DEFAULT_ACTOR_ID
+    )
+```
+
+### Keep Retrieval Namespaces Aligned with namespaceTemplates
+
+`agentcore deploy` grants `RetrieveMemoryRecords` with an IAM condition that matches **only the `namespaceTemplates`**. An EPISODIC strategy's `reflectionNamespaceTemplates` (`/episodes/{actorId}`) is not covered, so retrieving from it fails with `AccessDeniedException`. That is why `retrieval_config` targets only the two actor-scoped namespaces.
+
+### Keep relevance_score Low
+
+`relevance_score` is a floor on the semantic search score. Extracted preferences typically score around 0.4–0.5, so the scaffold default of 0.5 filters almost everything out. `memory_session.py` uses 0.3.
 
 ## Memory Types Demonstrated
 
 ### Short-term Memory (Session Context)
-- **API**: `create_event()` to store, `list_events()` to retrieve
-- **Purpose**: Store multiple estimates within a session for immediate comparison
-- **Use Case**: Compare different EC2 instance types side-by-side
+
+- Stores conversation events within the same `session_id` and restores them on the next turn
+- Retention is controlled by `eventExpiryDuration` (7–365 days, 30 by default)
+- Lets the agent answer about a previous estimate without calling the Pricing API or the Code Interpreter
 
 ### Long-term Memory (User Preferences)
-- **API**: `retrieve_memories()` to retrieve extracted preferences
-- **Purpose**: Learn user decision patterns and preferences over time
-- **Note**: Extraction is **asynchronous** ([AWS docs](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/long-term-saving-and-retrieving-insights.html))
-- **Use Case**: Recommend architectures based on historical choices
+
+- Memory Strategies asynchronously extract facts, preferences, summaries and episodes from conversations
+- `{actorId}` in `namespaceTemplates` isolates insights per user
+- Enables personalized proposals across sessions
 
 ## Usage Examples
 
-### Full Example
+### Verify all three memory phases
 
-```python
-from test_memory import AgentWithMemory
+```bash
+uv run python test_memory.py --agent-arn <runtime-arn> --memory-id <memory-id>
+```
 
-memory_agent = AgentWithMemory(actor_id="user123")
-with memory_agent as agent:
-    # Generate estimates (stored as short-term memory events)
-    agent("estimate: 1 EC2 t3.nano instance")
-    agent("estimate: 1 EC2 t3.micro with 20GB gp3 EBS")
+### Inspect long-term memory directly
 
-    # Compare using short-term memory (list_events)
-    agent("compare my recent estimates")
+```bash
+aws bedrock-agentcore retrieve-memory-records \
+  --memory-id <memory-id> \
+  --namespace "/users/default-user/preferences" \
+  --search-criteria '{"searchQuery":"user preferences for AWS instance type and budget","topK":3}'
+```
 
-    # Get personalized recommendation using long-term memory (retrieve_memories)
-    agent("propose optimal architecture for my needs")
+```
+{"context":"The user explicitly stated a preference for Graviton (ARM) instances.",
+ "preference":"Prefers Graviton (ARM) instances for AWS EC2",...}
+{"context":"The user explicitly stated they always use us-west-2.",
+ "preference":"Always uses the us-west-2 AWS region",...}
+```
+
+### Check Memory Strategy status
+
+```bash
+aws bedrock-agentcore-control get-memory --memory-id <memory-id> \
+  --query 'memory.strategies[].[type,status,namespaces]'
 ```
 
 ## Memory Benefits
 
-- **Session Continuity** - Compare multiple estimates within the same session
-- **Learning Capability** - Agent learns user preferences over time
-- **Personalized Recommendations** - Proposals based on historical patterns
-- **Cost Optimization** - Memory reuse reduces initialization time
-- **Debugging Support** - Event inspection for troubleshooting
+- **Declarative configuration** - Memory resources and strategies are just declared in `agentcore.json`
+- **Automated API calls** - the session manager handles `ListEvents` / `CreateEvent` / `RetrieveMemoryRecords`
+- **Privacy by design** - `{actorId}` and `{sessionId}` in `namespaceTemplates` isolate memory
+- **Personalization** - preferences extracted from past conversations carry into the next session
 
 ## References
 
 - [AgentCore Memory Developer Guide](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/memory.html)
-- [Memory Strategies Documentation](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/memory-strategies.html)
-- [Amazon Bedrock Converse API](https://docs.aws.amazon.com/bedrock/latest/userguide/conversation-inference.html)
-- [Strands Agents Documentation](https://github.com/aws-samples/strands-agents)
+- [Saving and retrieving long-term insights](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/long-term-saving-and-retrieving-insights.html)
+- [AgentCore CLI - Memory](https://github.com/aws/agentcore-cli/blob/main/docs/memory.md)
+- [Strands Agents - Session Management](https://strandsagents.com/latest/documentation/docs/user-guide/concepts/agents/sessions-state/)
 
 ---
 
-**Next Steps**: Integrate memory-enhanced agents into your applications to provide personalized, context-aware user experiences.
+**Next Steps**: Integrate the memory-enhanced agent into your application to deliver personalized, context-aware user experiences.

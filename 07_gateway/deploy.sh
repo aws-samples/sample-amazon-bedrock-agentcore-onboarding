@@ -1,5 +1,9 @@
 #!/bin/bash
 # Deploy the AgentCore Gateway Lambda function using AWS SAM
+#
+# The Lambda function is outside the AgentCore CLI's scope, so it is still
+# deployed with SAM. The Gateway and its target are declared in agentcore.json
+# and created by `agentcore deploy` — see README.md.
 
 set -e
 
@@ -68,37 +72,45 @@ if [ -z "$LAMBDA_ARN" ]; then
     exit 1
 fi
 
-# Save Lambda ARN to gateway configuration for create_gateway.py
-CONFIG_FILE="outbound_gateway.json"
-echo "Saving Lambda ARN to $CONFIG_FILE..."
-
-# Create or update the configuration file with Lambda ARN
-cat > $CONFIG_FILE << EOF
-{
-  "lambda_arn": "$LAMBDA_ARN",
-  "sender_email": "$SES_SENDER_EMAIL",
-  "deployment_timestamp": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
-  "stack_name": "$STACK_NAME",
-  "region": "$REGION",
-  "tool_name": "markdown_to_email"
-}
-EOF
-
 echo ""
 echo "Deployment complete!"
 echo "Lambda Function ARN: $LAMBDA_ARN"
 echo "Sender Email: $SES_SENDER_EMAIL"
-echo "Configuration saved to: $CONFIG_FILE"
 echo ""
-echo "Next steps:"
-echo "1. Ensure your sender email ($SES_SENDER_EMAIL) is verified in Amazon SES"
-echo "2. Run 'uv run python setup_outbound_gateway.py' to set up the Gateway (Lambda ARN will be read from config)"
-echo "3. The Gateway will provide a 'markdown_to_email' tool that converts markdown to HTML and sends via email"
+echo "=============================================================================="
+echo "Next steps — run these in the AgentCore project directory"
+echo "=============================================================================="
 echo ""
-echo "Tool usage:"
-echo "- markdown_text: The markdown content to convert"
-echo "- email_address: Recipient email address"
-echo "- subject: Email subject (optional)"
+echo "# 1. Create the project (the Gateway does not need an agent of its own)"
+echo "cd ../agents"
+echo "agentcore create --name MyGatewayProject --no-agent --skip-git"
+echo "cd MyGatewayProject"
+echo ""
+echo "# 2. Gateway with JWT inbound auth (reuse the Cognito from 06_identity)"
+echo "agentcore add gateway \\"
+echo "    --name AWSCostEstimatorGateway \\"
+echo "    --protocol-type MCP \\"
+echo "    --authorizer-type CUSTOM_JWT \\"
+echo "    --discovery-url <discovery-url> \\"
+echo "    --allowed-clients <client-id>"
+echo ""
+echo "# 3. Attach the Lambda as an MCP tool target"
+echo "agentcore add gateway-target \\"
+echo "    --name AWSCostEstimatorGatewayTarget \\"
+echo "    --gateway AWSCostEstimatorGateway \\"
+echo "    --type lambda-function-arn \\"
+echo "    --lambda-arn $LAMBDA_ARN \\"
+echo "    --tool-schema-file ../../07_gateway/tool_schema.json"
+echo ""
+echo "# 4. Create everything in AWS"
+echo "agentcore deploy"
+echo ""
+echo "# 5. Verify the tool is exposed, then send an estimate"
+echo "cd ../../07_gateway"
+echo "uv run python test_gateway.py --list-tools"
+echo "uv run python test_gateway.py --address $SES_SENDER_EMAIL"
+echo ""
+echo "=============================================================================="
 
 # Deactivate virtual environment if it was activated
 if [ ! -z "$VIRTUAL_ENV" ]; then

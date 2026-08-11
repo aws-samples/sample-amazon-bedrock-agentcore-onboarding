@@ -1,0 +1,16 @@
+// Permit the markdown_to_email tool only for OAuth clients whose access token
+// carries a scope containing "manager".
+//
+// The action name follows the Gateway convention:
+//     <TargetName>___<ToolName>
+// The resource is the Gateway ARN. Both are substituted by setup_policy_demo.py
+// before the policy is registered, because they are only known after
+// `agentcore deploy` has created the Gateway.
+permit(
+  principal,
+  action == AgentCore::Action::"__ACTION_NAME__",
+  resource == AgentCore::Gateway::"__GATEWAY_ARN__"
+) when {
+  principal.hasTag("scope") &&
+  principal.getTag("scope") like "*manager*"
+};

@@ -1,0 +1,21 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "secure-agent"
+version = "0.1.0"
+description = "AgentCore Runtime agent that calls a JWT-protected MCP server"
+requires-python = ">=3.12"
+dependencies = [
+    "aws-opentelemetry-distro",
+    "bedrock-agentcore>=1.0.3",
+    "boto3>=1.39.9",
+    "mcp>=1.0.0",
+    "strands-agents>=1.13.0",
+    "strands-agents-tools>=0.2.1",
+    "uv",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["."]

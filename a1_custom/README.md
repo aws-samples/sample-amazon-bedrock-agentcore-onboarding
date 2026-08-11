@@ -98,7 +98,7 @@ If errors occur, copy the error message to Kiro CLI for troubleshooting.
 - [Kiro CLI Documentation](https://kiro.dev/cli/)
 - [Amazon Q Developer Extension](https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/q-in-IDE-setup.html)
 - [AgentCore Runtime Developer Guide](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/runtime.html)
-- [Bedrock AgentCore Starter Toolkit](https://github.com/aws/bedrock-agentcore-starter-toolkit)
+- [AgentCore CLI](https://github.com/aws/agentcore-cli)
 
 ---
 

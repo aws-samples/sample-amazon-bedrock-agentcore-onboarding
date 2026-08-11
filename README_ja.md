@@ -14,14 +14,14 @@ Amazon Bedrock AgentCoreは、AIエージェントを大規模に構築、デプ
 - **Code Interpreter**: 動的な計算とデータ処理のための安全なサンドボックス実行環境
 - **Runtime**: AWSクラウドインフラストラクチャにおけるスケーラブルなエージェントのデプロイと管理
 - **Memory**: コンテキストを認識するエージェントのインタラクションのための短期・長期メモリ機能
-- **Evaluation**: ビルトインおよびカスタム評価器による品質保証 *(近日公開)*
+- **Evaluation**: ビルトインおよびカスタム評価器による品質保証 * (近日公開)*
 - **Observability**: CloudWatch統合による包括的なモニタリング、トレーシング、デバッグ
 
 **Extension** - 外部ツールとの連携
 - **Identity**: エージェント操作のためのOAuth 2.0認証と安全なトークン管理
 - **Gateway**: 認証とMCPプロトコルサポートを備えたAPIゲートウェイ統合
-- **Policy**: エージェントからツールへのアクセスをきめ細かく制御 *(近日公開)*
-- **Browser Use**: 永続的なブラウザプロファイルによるWeb自動化 *(近日公開)*
+- **Policy**: エージェントからツールへのアクセスをきめ細かく制御 * (近日公開)*
+- **Browser Use**: 永続的なブラウザプロファイルによるWeb自動化 * (近日公開)*
 
 ### 学習理念
 
@@ -37,62 +37,86 @@ Amazon Bedrock AgentCoreは、AIエージェントを大規模に構築、デプ
 ```
 sample-amazon-bedrock-agentcore-onboarding/
 │
-│  # Foundation - エージェントの構築・評価・監視
-├── 01_code_interpreter/          # 安全なサンドボックス実行環境
-│   ├── README.md                 # 📖 Code Interpreterハンズオンガイド
-│   ├── cost_estimator_agent/     # AWSコスト見積もりエージェント実装
-│   └── test_code_interpreter.py  # 完全なテストスイートとサンプル
+│  # ベースのエージェント (全 Lab から利用)
+├── agents/
+│   ├── CostEstimatorAgent/       # AWSコスト見積もりエージェント (唯一の常設エージェント)
+│   │   └── app/CostEstimatorAgent/
+│   │       ├── main.py           # Runtime エントリポイント
+│   │       ├── cost_estimator_agent.py  # AWSCostEstimatorAgent (Facade)
+│   │       ├── config.py         # SYSTEM_PROMPT / DEFAULT_MODEL
+│   │       ├── pyproject.toml    # Python 依存関係
+│   │       └── iam_policies/     # additionalPolicies に配線される IAM ポリシー
+│   ├── setup.py                  # ベース (+ overlay) を agentcore create の雛形へコピー
+│   │                             #   --target=プロジェクト / --agent=その中のエージェント
+│   └── .gitignore                # My*Agent/ (受講者が作る雛形) を除外
 │
+│  # Foundation - エージェントの構築・評価・監視
 ├── 02_runtime/                   # エージェントのデプロイと管理
 │   ├── README.md                 # 📖 Runtimeデプロイハンズオンガイド
-│   ├── prepare_agent.py          # エージェント準備自動化ツール
-│   ├── agent_package/            # デプロイ用パッケージ化エージェント
-│   └── deployment_configs/       # Runtime設定テンプレート
+│   └── invoke_agent.py           # boto3 (InvokeAgentRuntime) から呼び出すクライアント
 │
 ├── 03_memory/                    # コンテキスト認識インタラクション
 │   ├── README.md                 # 📖 Memory統合ハンズオンガイド
-│   ├── test_memory.py            # メモリ拡張エージェント実装
-│   └── _implementation.md        # 技術的実装詳細
+│   ├── agent/                    # ベースへ被せる Lab 3 固有のコード (overlay)
+│   └── test_memory.py            # 短期記憶 / 長期記憶 / actor分離の検証
 │
 ├── 04_observability/             # モニタリングとデバッグ
-│   └── README.md                 # 📖 Observabilityセットアップハンズオンガイド
+│   ├── README.md                 # 📖 Observabilityセットアップハンズオンガイド
+│   └── test_observability.py     # 同一セッションで複数回呼び出してトレースを生成
 │
-├── 05_evaluation/                # 品質保証 (近日公開)
+├── 05_evaluation/                # 品質保証
+│   ├── README.md                 # 📖 Evaluationハンズオンガイド
+│   ├── test_evaluation.py        # ローカル評価 (strands-agents-evals)
+│   └── evaluators/               # ローカル評価器 + AgentCore 評価器の設定
 │
 │  # Extension - 外部ツールとの連携
-├── 06_identity/                  # OAuth 2.0認証
+├── 06_identity/                  # OAuth 2.0 認証 (inbound / outbound)
+│   ├── agent/                    # ベースへ被せる Lab 6 固有のコード (overlay)
+│   ├── setup_cognito.py          # 認可サーバー (Cognito) の作成と削除
+│   └── clean_resources.py        # 06 が追加した分だけを削除
 │   ├── README.md                 # 📖 Identity統合ハンズオンガイド
-│   ├── setup_inbound_authorizer.py  # OAuth2プロバイダーセットアップ
-│   └── test_identity_agent.py    # Identity保護されたエージェント
+│   ├── setup_cognito.py          # 認可サーバー (Cognito) の作成と削除
+│   ├── test_identity_agent.py    # Identity保護されたエージェントのテスト
+│   └── clean_resources.py        # Runtime + Cognito の削除 (--force で Cognito も)
 │
 ├── 07_gateway/                   # 認証付きAPIゲートウェイ
 │   ├── README.md                 # 📖 Gateway統合ハンズオンガイド
-│   ├── setup_outbound_gateway.py # Gatewayデプロイ自動化
-│   ├── src/app.py                # Lambda関数実装
+│   ├── src/app.py                # Lambda関数実装 (Markdown → HTML メール)
+│   ├── template.yaml             # AWS SAM テンプレート
 │   ├── deploy.sh                 # Lambdaデプロイスクリプト
-│   └── test_gateway.py           # Gatewayテストエージェント
+│   ├── tool_schema.json          # Gateway に公開するツールのスキーマ
+│   ├── test_gateway.py           # Gatewayテストエージェント
+│   └── clean_resources.py        # Gateway + Lambda の削除 (--force が必要)
 │
-├── 08_policy/                    # ツール呼び出しのアクセス制御 (近日公開)
+├── 08_policy/                    # ツール呼び出しのアクセス制御
+│   ├── README.md                 # 📖 Policyハンズオンガイド
+│   ├── setup_policy_demo.py      # Cedarポリシーの生成とデモ用スコープの追加
+│   ├── policies/                 # Cedar ポリシー (テンプレート)
+│   ├── test_policy.py            # スコープ別アクセスのテスト
+│   └── clean_resources.py        # Policy Engine / Cedar ポリシー / デモ用スコープの削除
 │
-├── 09_browser_use/               # Web自動化 (近日公開)
+├── 09_browser_use/               # Web自動化
+│   ├── README.md                 # 📖 Browser Useハンズオンガイド
+│   ├── test_browser_use.py       # ブラウザ操作デモ
+│   └── clean_resources.py        # アクティブなブラウザセッションの停止
 │
 │  # 付録
 ├── a1_custom/                    # 📚 付録: カスタムエージェントの開発
-│   ├── README.md                 # 📖 カスタムエージェント開発ガイド
-│   ├── weather_agent/            # 例: 天気エージェント実装
-│   ├── prepare_agent.py          # デプロイ準備用
-│   └── test_agentcore_endpoint.py # テスト用
+│   └── README.md                 # 📖 カスタムエージェント開発ガイド
 │
 ├── pyproject.toml                # プロジェクト依存関係と設定
 ├── uv.lock                       # 依存関係ロックファイル
 └── README.md                     # この概要ドキュメント
 ```
 
+各 Lab は **`agentcore create` で雛形を作り、`agents/setup.py` でベースのコードを配置する** 運用です。
+Lab 固有の差分があるものは `0N_xxx/agent/` に置き、`--overlay` でベースへ被せます。
+
 ## ハンズオン学習パス
 
 ### 🚀 Foundation - エージェントの構築・評価・監視
 
-1. **[Code Interpreter](01_code_interpreter/README_ja.md)** - 基本的なエージェント開発はここから
+1. **[Code Interpreter](agents/CostEstimatorAgent/app/CostEstimatorAgent/README_ja.md)** - 基本的なエージェント開発はここから
    - 安全なPython実行環境でAWSコスト見積もりツールを構築
    - 即座に実践的な結果を得ながらAgentCoreの基本を学習
    - **所要時間**: ~30分 | **難易度**: 初級
@@ -112,7 +136,7 @@ sample-amazon-bedrock-agentcore-onboarding/
    - トレーシング、メトリクス、デバッグ機能をセットアップ
    - **所要時間**: ~20分 | **難易度**: 初級
 
-5. **Evaluation** *(近日公開)* - エージェントの品質を保証
+5. **Evaluation** * (近日公開)* - エージェントの品質を保証
    - 13のビルトイン評価器でエージェントのパフォーマンスをテスト
    - カスタムモデルベースのスコアリングシステムを作成
 
@@ -128,11 +152,11 @@ sample-amazon-bedrock-agentcore-onboarding/
    - ローカルツールとリモートゲートウェイ機能を組み合わせ
    - **所要時間**: ~15分 | **難易度**: 中級
 
-8. **Policy** *(近日公開)* - エージェントからツールへのアクセス制御
+8. **Policy** * (近日公開)* - エージェントからツールへのアクセス制御
    - Cedar言語できめ細かなアクセスポリシーを定義
    - Gateway統合によるリアルタイムのツール呼び出しインターセプト
 
-9. **Browser Use** *(近日公開)* - Webベースのワークフロー自動化
+9. **Browser Use** * (近日公開)* - Webベースのワークフロー自動化
    - ブラウザプロファイルで複雑なWebタスクを実行
    - セッション間での永続的な認証状態
 
@@ -146,7 +170,7 @@ sample-amazon-bedrock-agentcore-onboarding/
 ### 🎯 フォーカス学習（ユースケース別）
 
 **初めてのエージェント構築**
-→ [01_code_interpreter](01_code_interpreter/README_ja.md)から開始
+→ [agents/CostEstimatorAgent](agents/CostEstimatorAgent/app/CostEstimatorAgent/README_ja.md)から開始
 
 **本番環境へのデプロイ**
 → [02_runtime](02_runtime/README_ja.md) → [03_memory](03_memory/README_ja.md) → [04_observability](04_observability/README_ja.md)の順序で
@@ -155,14 +179,17 @@ sample-amazon-bedrock-agentcore-onboarding/
 → [06_identity](06_identity/README_ja.md) → [07_gateway](07_gateway/README_ja.md)に焦点を当てる
 
 **高度なAI機能**
-→ [01_code_interpreter](01_code_interpreter/README_ja.md) → [03_memory](03_memory/README_ja.md) → [04_observability](04_observability/README_ja.md)を探求
+→ [agents/CostEstimatorAgent](agents/CostEstimatorAgent/app/CostEstimatorAgent/README_ja.md) → [03_memory](03_memory/README_ja.md) → [04_observability](04_observability/README_ja.md)を探求
 
 ## 前提条件
 
 ### システム要件
-- **Python 3.11+** と `uv` パッケージマネージャー
+- **Python 3.12+** と `uv` パッケージマネージャー
 - 適切な権限で設定された **AWS CLI**
 - Bedrock AgentCore（プレビュー版）へのアクセス権を持つ **AWSアカウント**
+- **Node.js 20+** と **AgentCore CLI** (`npm install -g @aws/agentcore`)
+- **AWS CDK** — `agentcore deploy` が内部で使用します。デプロイ先リージョンで `cdk bootstrap` を一度実行してください
+- **AWS SAM CLI** — 07_gateway の Lambda デプロイに必要
 
 ### クイックセットアップ
 ```bash
@@ -172,6 +199,13 @@ cd sample-amazon-bedrock-agentcore-onboarding
 
 # 依存関係をインストール
 uv sync
+
+# AgentCore CLI をインストール
+npm install -g @aws/agentcore
+agentcore --version
+
+# CDK をブートストラップ (リージョンごとに一度)
+cdk bootstrap
 
 # AWS設定を確認
 aws sts get-caller-identity
@@ -203,32 +237,70 @@ aws sts get-caller-identity
 
 ### 🧹 **重要：AWSリソースのクリーンアップ**
 
-ハンズオン演習完了後は、継続的な課金を避けるためにリソースをクリーンアップしてください。**依存関係のため、逆順（09→02）でクリーンアップしてください**：
+ハンズオン演習完了後は、継続的な課金を避けるためにリソースをクリーンアップしてください。
+
+AgentCore CLI で作成したリソースは `agentcore remove all` で宣言から外し、
+`agentcore deploy` で削除を AWS に適用します。**`remove` だけでは AWS のリソースは
+残ったままです。** Cognito、Lambda、ブラウザセッションのように CLI の管理対象外のリソースを
+持つ演習 (06 / 07 / 08 / 09) には、両方をまとめた `clean_resources.py` があります。
+**依存関係のため、逆順（09→02）でクリーンアップしてください**：
 
 ```bash
-# 1. アクティブなブラウザセッションを停止
-uv run python 09_browser_use/clean_resources.py
+# 1. Browser Use — アクティブなブラウザセッションを停止
+cd 09_browser_use && uv run python clean_resources.py && cd ..
 
-# 2. ポリシーエンジンとCognitoリソースを削除
-uv run python 08_policy/clean_resources.py
+# 2. Policy — Cedar ポリシー、ポリシーエンジン、デモ用スコープ
+cd 08_policy && uv run python clean_resources.py && cd ..
 
-# 3. Gatewayリソースをクリーンアップ（SAM CLIを使用）
-cd 07_gateway
-sam delete  # Lambda関数と関連リソースを削除
-uv run python clean_resources.py
-cd ..
+# 3. Gateway — Gateway / target / credential と Lambda スタック
+cd 07_gateway && uv run python clean_resources.py --force && cd ..
 
-# 4. Identityリソースをクリーンアップ
-uv run python 06_identity/clean_resources.py
+# 4. Identity — 06 が追加した 2 つの Runtime と Credential Provider、Cognito
+#    (Lab 2 のエージェントは残ります)
+cd 06_identity && uv run python clean_resources.py --force && cd ..
 
-# 5. 評価設定を削除
-uv run python 05_evaluation/clean_resources.py
+# 5. Evaluation — 評価器とオンライン評価設定 (Runtime は残す)
+cd agents/MyCostEstimatorAgent
+agentcore remove online-eval --name cost_estimator_online_eval -y
+agentcore remove evaluator --name cost_estimator_tool_usage -y
+agentcore deploy
+cd ../..
 
-# 6. Memoryリソースをクリーンアップ
-uv run python 03_memory/clean_resources.py
+# 6. Memory — Lab 2 のプロジェクトに追加した Memory のみ削除
+cd agents/MyCostEstimatorAgent
+agentcore remove memory --name MyCostEstimatorAgentMemory -y && agentcore deploy
+cd ../..
 
-# 7. Runtimeリソースをクリーンアップ
-uv run python 02_runtime/clean_resources.py
+# 7. Runtime — ベースのエージェント (最後に実行)
+cd agents/MyCostEstimatorAgent
+agentcore remove all -y && agentcore deploy
+cd .. && rm -r MyCostEstimatorAgent && cd ..
+```
+
+`agentcore remove all` はプロジェクト内のすべての宣言を空にします。`agents/MyCostEstimatorAgent`
+は 02 / 03 / 05 / 06 が共有しているため、**すべての演習を終えたあとの最後の手順としてのみ**
+使ってください。途中で使うと他の演習のリソースまで消えます。個別に消す場合は
+`agentcore remove <種別> --name <名前>` を使います。
+
+後続の演習が使うリソースを守るため、07 と 06 のスクリプトは `--force` を要求します。
+スクリプトは削除後に `list-*` API を呼んで実際に消えたことを確認し、`✅` または `⚠️` で
+結果を報告します。
+
+01 と 04 は独自のクラウドリソースを作りません (01 はローカル実行、04 は 02 の Runtime を
+観測するだけ)。02 / 03 / 05 のリソースはすべて AgentCore CLI の管理下にあるため、
+スクリプトは不要です。
+
+削除できたことを確認します。
+
+```bash
+aws cloudformation list-stacks \
+  --stack-status-filter CREATE_COMPLETE UPDATE_COMPLETE REVIEW_IN_PROGRESS \
+  --query 'StackSummaries[?starts_with(StackName,`AgentCore-My`)].[StackName,StackStatus]'
+aws bedrock-agentcore-control list-agent-runtimes \
+  --query 'agentRuntimes[?starts_with(agentRuntimeName,`My`)].agentRuntimeName'
+aws bedrock-agentcore-control list-memories --query 'memories[?starts_with(id,`My`)].id'
+aws cognito-idp list-user-pools --max-results 20 \
+  --query 'UserPools[?starts_with(Name,`agentcore-cost-estimator`)].Name'
 ```
 
 ### 💡 **ベストプラクティス**
@@ -274,4 +346,4 @@ uv run python 02_runtime/clean_resources.py
 
 ---
 
-**準備はできましたか？** [01_code_interpreter](01_code_interpreter/README_ja.md)から始めて、最初のAgentCoreエージェントを構築しましょう！
+**準備はできましたか？** [agents/CostEstimatorAgent](agents/CostEstimatorAgent/app/CostEstimatorAgent/README_ja.md)から始めて、最初のAgentCoreエージェントを構築しましょう！

@@ -2,29 +2,37 @@
 Test Cedar-based policy enforcement on AgentCore Gateway.
 
 Demonstrates scope-based access control:
-- Manager: token contains manager scope -> Cedar permit matches -> can send emails
-- Developer: token lacks manager scope -> no matching permit -> email tool hidden
+- manager: token contains the manager scope -> Cedar permit matches -> email tool visible
+- viewer:  token lacks the manager scope   -> no matching permit  -> email tool hidden
+
+The Gateway URL and the demo scopes come from policy_demo.json, written
+by setup_policy_demo.py. The policy engine and policy themselves are declared in
+agentcore.json and created by `agentcore deploy`.
 
 Usage:
-    uv run python 08_policy/test_policy.py --role manager --address you@example.com
-    uv run python 08_policy/test_policy.py --role developer --address you@example.com
-    uv run python 08_policy/test_policy.py --role both --address you@example.com
+    # Compare both scopes (tool visibility only, no email sent)
+    uv run python test_policy.py
+
+    # A single scope
+    uv run python test_policy.py --scope manager
+
+    # Also run the agent end-to-end and send the estimate by email
+    uv run python test_policy.py --scope manager --address you@example.com
 """
 
-import json
-import os
-import sys
-import logging
 import argparse
+import json
+import logging
+import sys
+from pathlib import Path
+
 import boto3
 import requests
-from strands import Agent
-from strands import tool
+from strands import Agent, tool
 from strands.tools.mcp import MCPClient
 from mcp.client.streamable_http import streamablehttp_client
 from rich.console import Console
 from rich.panel import Panel
-from pathlib import Path
 
 # Configure logging
 logging.basicConfig(
@@ -33,12 +41,16 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Add the parent directory to the path to import from 01_code_interpreter
-sys.path.append(os.path.join(os.path.dirname(__file__), "..", "01_code_interpreter"))
-from cost_estimator_agent.cost_estimator_agent import AWSCostEstimatorAgent  # noqa: E402
+# The base agent lives under agents/ and uses flat imports (from config import ...),
+# so its directory has to be on sys.path.
+AGENT_DIR = (
+    Path(__file__).resolve().parent.parent
+    / "agents" / "CostEstimatorAgent" / "app" / "CostEstimatorAgent"
+)
+sys.path.insert(0, str(AGENT_DIR))
+from cost_estimator_agent import AWSCostEstimatorAgent  # noqa: E402
 
-POLICY_CONFIG_FILE = Path("policy_config.json")
-GATEWAY_CONFIG_FILE = Path("../07_gateway/outbound_gateway.json")
+CONFIG_FILE = Path("policy_demo.json")
 
 
 @tool(name="cost_estimator_tool", description="Estimate cost of AWS from architecture description")
@@ -47,13 +59,16 @@ def cost_estimator_tool(architecture_description: str) -> str:
     region = boto3.Session().region_name
     cost_estimator = AWSCostEstimatorAgent(region=region)
     logger.info("Estimating costs for: %s", architecture_description)
-    return cost_estimator.estimate_costs(architecture_description)
+    try:
+        return cost_estimator.estimate_costs(architecture_description)
+    finally:
+        cost_estimator.cleanup()
 
 
 def get_token_via_client_credentials(
-    token_endpoint: str, client_id: str, client_secret: str, scopes: str
+    token_endpoint: str, client_id: str, client_secret: str, scope: str
 ) -> str:
-    """Get OAuth2 access token using Cognito client_credentials flow."""
+    """Get an OAuth2 access token using the Cognito client_credentials flow."""
     logger.info("Requesting token from %s", token_endpoint)
     response = requests.post(
         token_endpoint,
@@ -61,46 +76,48 @@ def get_token_via_client_credentials(
             "grant_type": "client_credentials",
             "client_id": client_id,
             "client_secret": client_secret,
-            "scope": scopes,
+            "scope": scope,
         },
         headers={"Content-Type": "application/x-www-form-urlencoded"},
         timeout=30,
     )
     response.raise_for_status()
-    token_data = response.json()
-    access_token = token_data["access_token"]
-    logger.info("Token obtained (scopes: %s)", scopes)
-    return access_token
+    logger.info("Token obtained (scope: %s)", scope)
+    return response.json()["access_token"]
 
 
-def run_agent_with_role(role: str, architecture: str, address: str, console: Console):
-    """Run the agent with a specific role's credentials."""
-    # Load configs
-    with POLICY_CONFIG_FILE.open("r") as f:
-        policy_config = json.load(f)
-    with GATEWAY_CONFIG_FILE.open("r") as f:
-        gateway_config = json.load(f)
+def collect_gateway_tools(mcp_client: MCPClient) -> list:
+    """List every tool the Gateway exposes, following pagination."""
+    tools = []
+    pagination_token = None
+    while True:
+        page = mcp_client.list_tools_sync(pagination_token=pagination_token)
+        tools.extend(page)
+        pagination_token = page.pagination_token
+        if pagination_token is None:
+            return tools
 
-    cognito = policy_config["cognito_clients"]
-    role_config = cognito[role]
-    gateway_url = gateway_config["gateway"]["url"]
+
+def run_for_scope(
+    scope_key: str, config: dict, architecture: str, address: str | None, console: Console
+):
+    """Show which tools the Gateway exposes for one scope, and optionally run the agent."""
+    scope = config["scopes"][scope_key]
+    gateway_url = config["gateway"]["url"]
 
     console.print(Panel(
-        f"[bold]Role:[/bold] {role.upper()}\n"
-        f"[bold]Client ID:[/bold] {role_config['client_id']}\n"
-        f"[bold]Scopes:[/bold] {role_config['scopes']}",
-        title=f"Testing as {role.upper()}",
+        f"[bold]Scope requested:[/bold] {scope}\n"
+        f"[bold]Client ID:[/bold] {config['client_id']}",
+        title=f"Testing as {scope_key.upper()}",
     ))
 
-    # Get access token for this role
     access_token = get_token_via_client_credentials(
-        token_endpoint=cognito["token_endpoint"],
-        client_id=role_config["client_id"],
-        client_secret=role_config["client_secret"],
-        scopes=role_config["scopes"],
+        token_endpoint=config["token_endpoint"],
+        client_id=config["client_id"],
+        client_secret=config["client_secret"],
+        scope=scope,
     )
 
-    # Create MCP client with bearer token
     def create_transport():
         return streamablehttp_client(
             gateway_url,
@@ -109,51 +126,36 @@ def run_agent_with_role(role: str, architecture: str, address: str, console: Con
 
     mcp_client = MCPClient(create_transport)
 
-    # Build agent with local + gateway tools
-    tools = [cost_estimator_tool]
     with mcp_client:
-        # Paginate through all gateway tools
-        more_tools = True
-        pagination_token = None
-        while more_tools:
-            tmp_tools = mcp_client.list_tools_sync(pagination_token=pagination_token)
-            tools.extend(tmp_tools)
-            if tmp_tools.pagination_token is None:
-                more_tools = False
-            else:
-                pagination_token = tmp_tools.pagination_token
+        gateway_tools = collect_gateway_tools(mcp_client)
+        tool_names = [t.tool_name for t in gateway_tools]
+        logger.info("Gateway tools: %s", tool_names)
 
-        tool_names = [t.tool_name for t in tools]
-        logger.info("Available tools: %s", tool_names)
-
-        # Show policy effect: which tools are visible to this role?
-        # With ENFORCE mode, unauthorized tools are hidden from the list
+        # With ENFORCE mode, tools the policy does not permit are hidden
         has_email = any("markdown_to_email" in name for name in tool_names)
-        local_tools = [n for n in tool_names if "___" not in n]
-        gateway_tools = [n for n in tool_names if "___" in n]
 
-        tool_list = "\n".join(f"  [green]✓[/green] {n}" for n in local_tools)
-        if gateway_tools:
-            tool_list += "\n" + "\n".join(
-                f"  [green]✓[/green] {n}" for n in gateway_tools
-            )
-        else:
+        tool_list = "\n".join(f"  [green]✓[/green] {n}" for n in tool_names) or "  (none)"
+        if not has_email:
             tool_list += (
                 "\n  [yellow]✗ markdown_to_email — hidden by Cedar policy[/yellow]"
             )
 
         if has_email:
-            verdict = "[green bold]PERMITTED[/green bold] — token scope matches Cedar policy"
+            verdict = "[green bold]PERMITTED[/green bold] — token scope matches the Cedar policy"
         else:
-            verdict = "[yellow bold]DEFAULT-DENY[/yellow bold] — token scope does not match any permit"
+            verdict = "[yellow bold]DEFAULT-DENY[/yellow bold] — token scope matches no permit"
 
         console.print(Panel(
-            f"[bold]Tools visible to {role.upper()}:[/bold]\n"
+            f"[bold]Gateway tools visible with {scope}:[/bold]\n"
             f"{tool_list}\n\n"
             f"[bold]Policy decision:[/bold] {verdict}",
-            title=f"Policy Effect: {role.upper()}",
+            title=f"Policy Effect: {scope_key.upper()}",
         ))
 
+        if not address:
+            return None
+
+        tools = [cost_estimator_tool] + gateway_tools
         agent = Agent(
             system_prompt=(
                 "You are a professional solution architect. Please estimate cost of AWS platform."
@@ -166,29 +168,28 @@ def run_agent_with_role(role: str, architecture: str, address: str, console: Con
 
         prompt = f"requirements: {architecture}, address: {address}"
         logger.info("Sending prompt to agent...")
-
         result = agent(prompt)
         console.print(Panel(
-            f"[green]Agent completed successfully for {role.upper()}[/green]",
+            f"[green]Agent completed for {scope_key}[/green]",
             title="Result",
         ))
         return result
 
 
-def main():
+def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Test Cedar policy enforcement on AgentCore Gateway"
+        description="Test Cedar policy enforcement on AgentCore Gateway",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=__doc__,
     )
     parser.add_argument(
-        "--role",
-        type=str,
-        choices=["manager", "developer", "both"],
+        "--scope",
+        choices=["manager", "viewer", "both"],
         default="both",
-        help="Role to test (default: both)",
+        help="Which demo scope to request (default: both)",
     )
     parser.add_argument(
         "--architecture",
-        type=str,
         default=(
             "A simple web application with an Application Load Balancer, "
             "2 EC2 t3.medium instances, and an RDS MySQL database in us-east-1."
@@ -197,21 +198,30 @@ def main():
     )
     parser.add_argument(
         "--address",
-        type=str,
-        required=True,
-        help="Email address to send estimation",
+        help="Email address to send the estimate to. Omit to only compare tool visibility",
     )
     args = parser.parse_args()
     console = Console()
 
-    roles = ["manager", "developer"] if args.role == "both" else [args.role]
+    if not CONFIG_FILE.exists():
+        logger.error(
+            "%s not found. Run `uv run python setup_policy_demo.py` first.", CONFIG_FILE
+        )
+        return 1
 
-    for role in roles:
+    with CONFIG_FILE.open() as f:
+        config = json.load(f)
+
+    scopes = ["manager", "viewer"] if args.scope == "both" else [args.scope]
+
+    for scope_key in scopes:
         console.print()
-        console.rule(f"Testing {role.upper()} role")
-        run_agent_with_role(role, args.architecture, args.address, console)
+        console.rule(f"Testing {scope_key.upper()} scope")
+        run_for_scope(scope_key, config, args.architecture, args.address, console)
         console.print()
+
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

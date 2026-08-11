@@ -1,0 +1,24 @@
+[
+  {
+    "name": "markdown_to_email",
+    "description": "Convert Markdown content to email format and send it via Amazon SES",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "markdown_text": {
+          "type": "string",
+          "description": "Markdown content to convert to email format"
+        },
+        "email_address": {
+          "type": "string",
+          "description": "Recipient email address"
+        },
+        "subject": {
+          "type": "string",
+          "description": "Title of email"
+        }
+      },
+      "required": ["markdown_text", "email_address"]
+    }
+  }
+]

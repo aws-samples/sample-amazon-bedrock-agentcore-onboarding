@@ -42,9 +42,13 @@ sequenceDiagram
     Script-->>User: Screenshots + success report
 ```
 
+> AgentCore Browser is not a resource managed by the AgentCore CLI. Like the Code Interpreter it is
+> used directly through the SDK tool client (`bedrock_agentcore.tools.browser_client`), so this lab
+> does not run `agentcore create` or `agentcore deploy`.
+
 ## Prerequisites
 
-1. **Step 01 completed** — The cost estimator agent (`01_code_interpreter/`) must work
+1. **Base agent** — `agents/CostEstimatorAgent/` must be present (used for cost estimation)
 2. **IAM permissions** — AgentCore Browser and Bedrock model invocation permissions are required. See [AgentCore Browser onboarding guide](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/browser-onboarding.html) for the required IAM policy.
 
 ## How to Use

@@ -8,69 +8,149 @@ allowed-tools: Bash, Read, Glob, Grep, Task, TaskCreate, TaskUpdate, TaskList
 
 Clean up AWS resources created by the AgentCore onboarding workshop.
 
+Each lab directory has a `clean_resources.py` that handles everything for that lab. It runs
+`agentcore remove all` followed by `agentcore deploy` for CLI-managed resources (the removal is
+only applied to AWS by the deploy), deletes resources outside the CLI's scope — Cognito, the
+Lambda stack, browser sessions — with boto3, and verifies the result with `list-*` API calls.
+
+**Only labs that own resources outside the CLI's scope ship a script**: 06 (Cognito),
+07 (Lambda stack), 08 (Cognito demo scopes), and 09 (browser sessions). Everything in 02, 03,
+and 05 is fully CLI-managed, so those are cleaned with plain `agentcore` commands.
+
+**Prefer the scripts where they exist** — they encode the removal ordering and the cross-lab
+dependency guards.
+
 ## Usage
 
-- `/clean-workshop` — Clean all workshop resources (09, 08, 07, 06, 05, 03, 02)
+- `/clean-workshop` — Clean all workshop resources
 - `/clean-workshop 02` — Clean only step 02 (runtime)
 - `/clean-workshop 02 03` — Clean steps 02 and 03
-- `/clean-workshop 05 06 07` — Clean steps 05, 06, and 07
-- `/clean-workshop 08 09` — Clean steps 08 and 09
+- `/clean-workshop 07 08` — Clean steps 07 and 08
 
 ## Arguments
 
 `$ARGUMENTS` contains space-separated step numbers to clean (e.g., `02 03 07`).
 If empty, clean ALL steps that have resources.
 
-## Steps with Cleanable Resources
+## AgentCore Projects
 
-Only these steps create AWS resources that need cleanup:
+Resources are grouped by project, not by step. Several steps share a project.
 
-| Step | Directory | Resources | Config File |
-|------|-----------|-----------|-------------|
-| 02 | `02_runtime/` | Agent runtime, ECR repository, config files | `.bedrock_agentcore.yaml` |
-| 03 | `03_memory/` | Memory instances (prefix: `cost_estimator_memory`) | None |
-| 05 | `05_evaluation/` | Custom evaluator (name: `cost_estimator_tool_usage`) | None |
-| 06 | `06_identity/` | OAuth2 provider, Cognito user pool/client/domain, runtime | `inbound_authorizer.json` |
-| 07 | `07_gateway/` | Gateway targets, gateway, config files | `outbound_gateway.json` |
-| 08 | `08_policy/` | Policy engine, policies, Cognito app clients | `policy_config.json` |
-| 09 | `09_browser_use/` | Browser sessions (ephemeral, auto-expire) | None |
+| Project | Created by | Contains |
+|---------|-----------|----------|
+| `agents/MyCostEstimatorAgent` | 02 | Runtime; memory added by 03; evaluator and online eval config added by 05 |
+| `agents/MyCostEstimatorAgent` | 06 | Two JWT-protected Runtimes (agent + MCP server) + credential provider, added alongside Lab 2's agent. Remove by name, never `remove all` |
+| `agents/MyGatewayProject` | 07 | Gateway + target + credential; policy engine added by 08 |
+
+## Cleanup Commands
+
+Run in this order. Steps whose resources are used by a later lab require `--force`.
+
+| Order | Command | What it removes |
+|-------|---------|-----------------|
+| 1 | `cd 09_browser_use && uv run python clean_resources.py` | Browser sessions (ephemeral) |
+| 2 | `cd 08_policy && uv run python clean_resources.py` | Cedar policy, policy engine, demo Cognito scopes |
+| 3 | `cd 07_gateway && uv run python clean_resources.py --force` | Gateway, target, credential, Lambda stack |
+| 4 | `cd 06_identity && uv run python clean_resources.py --force` | JWT Runtime, credential provider, Cognito |
+| 5 | See below (CLI only) | Evaluator, online eval config |
+| 6 | See below (CLI only) | Runtime + Memory |
+| 7 | See below (CLI only) | Runtime |
+
+Steps 5–7 are fully CLI-managed:
+
+```bash
+# 5. Evaluation — keeps the runtime
+cd agents/MyCostEstimatorAgent
+agentcore remove online-eval --name cost_estimator_online_eval -y
+agentcore remove evaluator --name cost_estimator_tool_usage -y
+agentcore deploy
+
+# 6. Memory — only the memory, the runtime stays for 04/05
+cd agents/MyCostEstimatorAgent
+agentcore remove memory --name MyCostEstimatorAgentMemory -y && agentcore deploy
+
+# 7. Runtime — last step only
+cd agents/MyCostEstimatorAgent
+agentcore remove all -y && agentcore deploy
+cd .. && rm -r MyCostEstimatorAgent
+```
+
+`remove all` empties every declaration in the project. `agents/MyCostEstimatorAgent` is
+shared by labs 02, 03, 05, and 06, so this belongs in the **final** step only. Mid-sequence,
+remove resources by name: `agentcore remove <kind> --name <name>`.
+
+Useful flags:
+
+- `07_gateway --keep-lambda` — keep the SAM-deployed Lambda stack
+- `06_identity` without `--force` — removes the AgentCore resources but keeps Cognito
 
 ## Dependency Order (CRITICAL)
 
-Resources MUST be cleaned in reverse dependency order to avoid errors:
+The scripts guard the cross-lab dependencies, but the order still matters:
+
 1. **09_browser_use** first (independent, ephemeral sessions)
-2. **08_policy** second (depends on 07_gateway)
-3. **07_gateway** (depends on 06_identity)
-4. **06_identity** (depends on 02_runtime)
-5. **05_evaluation** (independent)
-6. **03_memory** (independent)
-7. **02_runtime** last (other steps depend on it)
+2. **08_policy** second (its policy engine is attached to 07's gateway)
+3. **07_gateway** (needs `--force`: 08 depends on this gateway)
+4. **06_identity** (needs `--force` to delete Cognito, which 07 and 08 also use)
+5. **05_evaluation** (CLI only — its resources live in 02's project)
+6. **03_memory** (CLI only — removes just the memory from 02's project)
+7. **02_runtime** last (CLI only — 04 and 05 depend on this runtime)
 
-## Execution
+Within a project, referencing resources must be removed first:
 
-For each step to clean, run:
+- `online-eval` before `evaluator` (`Evaluator ... is referenced by online eval config(s)`)
+- `policy` before `policy-engine`
+
+The scripts for 06–09 already handle this ordering internally. For 05 the order has to be
+followed by hand, as shown above.
+
+Steps 01 and 04 create no cloud resources of their own — 01 runs locally and 04 observes 02's
+runtime — so there is nothing to clean.
+
+## Verification
+
+Each script verifies its own scope and prints `✅` or `⚠️`. To check everything at once:
+
+```bash
+aws cloudformation list-stacks \
+  --stack-status-filter CREATE_COMPLETE UPDATE_COMPLETE REVIEW_IN_PROGRESS \
+  --query 'StackSummaries[?starts_with(StackName,`AgentCore-My`)].[StackName,StackStatus]'
+aws bedrock-agentcore-control list-agent-runtimes \
+  --query 'agentRuntimes[?starts_with(agentRuntimeName,`My`)].agentRuntimeName'
+aws bedrock-agentcore-control list-memories --query 'memories[?starts_with(id,`My`)].id'
+aws bedrock-agentcore-control list-evaluators \
+  --query 'evaluators[?contains(evaluatorName,`cost_estimator`)].evaluatorName'
+aws bedrock-agentcore-control list-gateways \
+  --query 'items[?starts_with(name,`mygatewayproject`)].name'
+aws cognito-idp list-user-pools --max-results 20 \
+  --query 'UserPools[?starts_with(Name,`agentcore-cost-estimator`)].Name'
 ```
-cd <project_root>/<step_directory> && uv run python clean_resources.py
-```
 
-### Before cleaning each step:
-1. Check if the config file exists (indicates resources were created)
-2. If no config file, skip that step with a message
-3. Run `clean_resources.py` from within the step directory (scripts use relative paths)
-4. Report success or failure for each step
+All should return `[]`. `Builtin.*` evaluators are provided by AgentCore and need no cleanup.
 
-### Error handling:
+## Error handling
+
 - If a step fails, log the error and continue with remaining steps
-- Report a summary at the end showing which steps succeeded/failed
-- Common errors: ResourceNotFoundException (already deleted), config file missing (never created)
+- A script exits non-zero when its verification still finds resources — re-run it
+- Labs 02, 03, and 05 have no script; verify them with the `list-*` queries below
+- `agentcore remove all` succeeding but `agentcore deploy` failing means the AWS resources are
+  still there — retry the deploy
+- A stack stuck in `REVIEW_IN_PROGRESS` or `ROLLBACK_COMPLETE` blocks `agentcore deploy`; delete
+  it directly: `aws cloudformation delete-stack --stack-name AgentCore-<project>-default`
+- Common non-errors: ResourceNotFoundException (already deleted), missing project directory
+  (never created). The scripts report these as "nothing to clean" and exit 0
+- A full project teardown takes 1–2 minutes because CloudFormation deletes the stack
 
 ## Implementation
 
 1. Parse `$ARGUMENTS` to determine which steps to clean. If empty, use all: `09 08 07 06 05 03 02`
-2. Sort the requested steps in correct cleanup order: 09, 08, 07, 06, 05, 03, 02
+2. Sort the requested steps in cleanup order: 09, 08, 07, 06, 05, 03, 02
 3. Create a task list tracking each step
 4. For each step (in order):
-   a. Check if the step directory and config file exist
-   b. If resources exist, run `clean_resources.py` from that directory
-   c. Mark task as completed
-5. Print a final summary
+   a. For 09, 08, 07, 06: run `uv run python clean_resources.py` from that lab directory,
+      adding `--force` for 07 and 06
+   b. For 05, 03, 02: run the `agentcore` commands shown above from the project directory
+   c. The scripts skip themselves when nothing exists — no need to pre-check
+   d. Mark task as completed, noting whether verification printed `✅`
+5. Run the verification commands above
+6. Print a final summary

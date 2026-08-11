@@ -98,25 +98,24 @@ Cedarポリシーでは `principal.getTag("scope") like "*manager*"` を使い�
 
 ```mermaid
 sequenceDiagram
-    participant M as Managerクライアント
-    participant D as Developerクライアント
+    participant M as manager スコープ
+    participant D as viewer スコープ
     participant GW as Gateway + Policy Engine
     participant Tool as markdown_to_email
     participant CE as cost_estimator
 
-    M->>GW: リクエスト（Managerのmanagerスコープがトークンに含まれる）
+    M->>GW: リクエスト（scope=agentcore/manager）
     GW->>GW: Cedar: scopeにmanagerを含む → 許可
-    Note over GW: ツール一覧: [cost_estimator, markdown_to_email]
+    Note over GW: ツール一覧: [markdown_to_email]
     GW->>CE: コスト見積もり
     CE-->>GW: コストレポート
     GW->>Tool: メール送信
     Tool-->>M: メール送信完了 ✓
 
-    D->>GW: リクエスト（DeveloperのdeveloperスコープがJWTに含まれる）
+    D->>GW: リクエスト（scope=agentcore/viewer）
     GW->>GW: Cedar: scopeにmanagerを含まない → デフォルト拒否
-    Note over GW: ツール一覧: [cost_estimator]（メールツール非表示）
-    GW->>CE: コスト見積もり
-    CE-->>D: コストレポートのみ（エージェントはメールツールを認識しない）
+    Note over GW: ツール一覧: []（メールツール非表示）
+    GW-->>D: ツールが見えないため呼び出せない
 ```
 
 ## 前提条件
@@ -124,6 +123,7 @@ sequenceDiagram
 1. **06_identity** — 完了済み（Cognitoユーザープール + OAuth2プロバイダー）
 2. **07_gateway** — 完了済み（`markdown_to_email` Lambda付きMCP Gateway）
 3. **AWS認証情報** — Bedrock AgentCoreおよびCognito権限付き
+4. **AgentCore CLI** — `npm install -g @aws/agentcore`
 
 ## 使用方法
 
@@ -131,13 +131,16 @@ sequenceDiagram
 
 ```
 08_policy/
-├── README.md                # 英語ドキュメント
-├── README_ja.md             # このドキュメント
-├── setup_policy.py          # ポリシーエンジン、Cedarポリシー、Cognitoクライアント作成
-├── test_policy.py           # ロールベースアクセスのテスト（manager vs developer）
-├── clean_resources.py       # リソースクリーンアップ
-└── policy_config.json       # 生成された設定（セットアップ後）
+├── README.md                          # 英語ドキュメント
+├── README_ja.md                       # このドキュメント
+├── setup_policy_demo.py               # Cedarポリシーの生成とデモ用スコープの追加
+├── policies/
+│   └── email_scope.cedar.template     # Cedarポリシーのテンプレート
+└── test_policy.py                     # スコープ別アクセスのテスト（manager vs viewer）
 ```
+
+Policy Engine と Cedar ポリシーは `agentcore.json` に宣言し `agentcore deploy` で
+作成するため、それらを作成するスクリプトは不要になりました。
 
 以下のコマンドはすべて `08_policy` ディレクトリで実行します：
 
@@ -145,42 +148,116 @@ sequenceDiagram
 cd 08_policy
 ```
 
-### ステップ1: ポリシーリソースのセットアップ
+### ステップ1: Cedarポリシーとデモ用スコープを準備
 
 ```bash
-uv run python setup_policy.py
+uv run python setup_policy_demo.py
 ```
 
 以下を実行します：
 
-1. **2つのM2Mアプリクライアントを作成** — ManagerとDeveloper、ロール固有のスコープ付き
-2. **Gatewayの`allowedClients`を更新** — 両方の新クライアントのトークンを受け入れるように
-3. **Policy Engineを作成** — Cedarポリシーのコンテナ
-4. **NL2Cedarのデモ** — `StartPolicyGeneration` を使用して自然言語からCedarポリシーを生成
-5. **Cedarポリシーを作成** — スコープマッチングで `markdown_to_email` をManagerにのみ許可
-6. **Policy EngineをGatewayにアタッチ** — `ENFORCE` モードで
+1. **Cedarポリシーの生成** — `policies/email_scope.cedar.template` の `__ACTION_NAME__` と
+   `__GATEWAY_ARN__` を、Lab 7 のプロジェクトの `agentcore/.cli/deployed-state.json` から
+   読んだ実際の値に置き換えて `policies/email_scope.cedar` を生成
+2. **デモ用スコープの追加** — Cognitoのリソースサーバーに `manager` / `viewer` スコープを追加し、
+   既存のアプリクライアントで両方を要求できるようにする
 
-### ステップ2: Developerとしてテスト（メール拒否）
-
-```bash
-uv run python test_policy.py --role developer --address you@example.com
+```
+INFO: ✅ Rendered policies/email_scope.cedar
+INFO: ✅ App client allowed scopes: ['agentcore/invoke', 'agentcore/manager', 'agentcore/viewer']
 ```
 
-Developerのトークンには `invoke developer` スコープのみが含まれ、`manager` スコープがありません。Cedarポリシーのスコープマッチング条件を満たさないため、**デフォルト拒否** により `markdown_to_email` ツールはツール一覧に **表示されません**。エージェントはコスト見積もりを実行しますが、メールは送信できません。ログ出力のツール一覧を比較すると、`markdown_to_email` がポリシーにより除外されていることを確認できます。
+> アプリクライアントを増やすのではなく、**同じクライアントに複数のスコープを許可**しています。
+> クライアントを増やすと Gateway の `allowedClients` にも追加が必要になり、Gateway の
+> 再作成が発生してしまいます。
 
-### ステップ3: Managerとしてテスト（メール許可）
+### ステップ2: Policy EngineとCedarポリシーを宣言してデプロイ
 
 ```bash
-uv run python test_policy.py --role manager --address you@example.com
+cd ../agents/MyGatewayProject
+
+agentcore add policy-engine \
+    --name cost_estimator_policy_engine \
+    --attach-to-gateways AWSCostEstimatorGateway \
+    --attach-mode ENFORCE
+
+agentcore add policy \
+    --name email_scope_policy \
+    --engine cost_estimator_policy_engine \
+    --source ../../08_policy/policies/email_scope.cedar
+
+agentcore deploy
 ```
 
-Managerのトークンには `invoke manager` スコープが含まれています。Cedarポリシーのスコープマッチング条件に一致するため、`markdown_to_email` ツールの呼び出しが **許可** されます。エージェントはコスト見積もりを実行し、結果をメールで送信します。
+`--attach-mode` は `ENFORCE`（実際に許可/拒否を適用）と `LOG_ONLY`（記録のみのシャドーモード）を
+選べます。本番導入前は `LOG_ONLY` で影響を確認してから切り替えるのが安全です。
 
-### ステップ4: クリーンアップ
+### ステップ3: viewerスコープでテスト（メール拒否）
+
+```bash
+cd ../../08_policy
+uv run python test_policy.py --scope viewer
+```
+
+`viewer` スコープのトークンには `manager` が含まれません。Cedarポリシーの条件を満たさないため、
+**デフォルト拒否** により `markdown_to_email` ツールはツール一覧に **表示されません**。
+
+```
+╭─────────────────────────── Policy Effect: VIEWER ────────────────────────────╮
+│ Gateway tools visible with agentcore/viewer:                                 │
+│   (none)                                                                     │
+│   ✗ markdown_to_email — hidden by Cedar policy                               │
+│                                                                              │
+│ Policy decision: DEFAULT-DENY — token scope matches no permit                │
+╰──────────────────────────────────────────────────────────────────────────────╯
+```
+
+ツール一覧から消えるため、エージェントはそのツールの存在すら認識しません。
+
+### ステップ4: managerスコープでテスト（メール許可）
+
+```bash
+uv run python test_policy.py --scope manager
+```
+
+```
+╭─────────────────────────── Policy Effect: MANAGER ───────────────────────────╮
+│ Gateway tools visible with agentcore/manager:                                │
+│   ✓ AWSCostEstimatorGatewayTarget___markdown_to_email                        │
+│                                                                              │
+│ Policy decision: PERMITTED — token scope matches the Cedar policy            │
+╰──────────────────────────────────────────────────────────────────────────────╯
+```
+
+引数なしで両方を続けて比較できます。`--address` を付けると実際にコスト見積りを実行して
+メール送信まで行います（SESで検証済みのアドレスが必要）。
+
+```bash
+uv run python test_policy.py
+uv run python test_policy.py --scope manager --address you@example.com
+```
+
+### ステップ5: クリーンアップ
 
 ```bash
 uv run python clean_resources.py
 ```
+
+スクリプトは 3 つのことを行います。Cognito アプリクライアントに追加したデモ用スコープを元に
+戻し、Cedar ポリシーとポリシーエンジンを削除し、`agentcore deploy` で AWS に適用します。
+
+> ポリシーエンジンはポリシーを保持している間は削除できないため、`policy` → `policy-engine`
+> の順で削除する必要があります。
+
+Gateway 自体を削除する場合は `../07_gateway/clean_resources.py --force` を実行してください。
+
+`test_policy.py` のオプション:
+
+| フラグ | 説明 | デフォルト |
+|---|---|---|
+| `--scope` | 使う OAuth スコープ (`viewer` / `manager`) | 必須 |
+| `--architecture` | コスト見積り用のアーキテクチャ記述 | 既定のシナリオ |
+| `--region` | AWS リージョン | プロファイルの設定 |
 
 ## 主要な実装の詳細
 
@@ -199,33 +276,27 @@ permit(
 
 このポリシーは「JWTに `manager` スコープを持つ呼び出し元に、このGateway上の `markdown_to_email` ツールの呼び出しを許可する」という意味です。
 
-`setup_policy.py` がGateway ARNをポリシーに自動挿入します。Developerのトークンには `manager` スコープが含まれないため、`when` 条件を満たさずデフォルト拒否が適用され、メールツールはDeveloperのツール一覧に表示されません。
+アクション名は Gateway の規約により `<Target名>___<ツール名>` になります。Gateway ARN と
+アクション名は `agentcore deploy` 後にしか分からないため、`setup_policy_demo.py` が
+テンプレートから実際のポリシーファイルを生成します。`viewer` スコープのトークンには
+`manager` が含まれないため、`when` 条件を満たさずデフォルト拒否が適用され、メールツールは
+ツール一覧に表示されません。
 
 ### NL2Cedar: 自然言語からポリシー生成
 
-AgentCore Policyの強力な機能の一つが **NL2Cedar** です。`StartPolicyGeneration` を使って、自然言語の説明からCedarポリシーを生成できます。
+AgentCore Policyの強力な機能の一つが **NL2Cedar** です。AgentCore CLI では
+`agentcore add policy -g/--generate` で自然言語からCedarポリシーを生成できます。
 
-```python
-# ポリシーの意図を自然言語で記述
-nl_description = (
-    "Allow any user whose OAuth token scope contains 'manager' "
-    "to use the markdown_to_email tool on the gateway. "
-    "Deny all other users from using the markdown_to_email tool."
-)
-
-# Cedarポリシーを生成
-generation = policy_client.generate_policy(
-    policy_engine_id=engine_id,
-    name="scope_based_email_policy",
-    resource={"arn": gateway_arn},
-    content={"rawText": nl_description},
-    fetch_assets=True,
-)
-
-# 生成されたCedarステートメントを確認
-for asset in generation["generatedPolicies"]:
-    print(asset["definition"]["cedar"]["statement"])
+```bash
+agentcore add policy \
+    --name email_scope_policy \
+    --engine cost_estimator_policy_engine \
+    --gateway AWSCostEstimatorGateway \
+    --target AWSCostEstimatorGatewayTarget \
+    -g "Allow only users whose OAuth token scope contains 'manager' to use the markdown_to_email tool"
 ```
+
+`--gateway` と `--target` は Cedar のアクションスコープを決めるために使われます。
 
 NL2Cedarは意図を表現する **相補的な2つのポリシー**（`permit` と `forbid` のペア）を生成します：
 
@@ -239,21 +310,50 @@ forbid(principal, action == ..., resource == ...)
 when { !(principal.hasTag("scope") && principal.getTag("scope") like "*manager*") };
 ```
 
-AgentCoreのようなデフォルト拒否システムでは、`forbid` ポリシーは冗長です。`permit` に一致しない呼び出し元はそもそもブロックされるためです。ただしNL2Cedarは意図を明示するために両方を生成します。`setup_policy.py` では生成された `permit` ポリシーを実際のCedarポリシーとして使用し、NL2Cedarが利用できない場合は手書きのフォールバックに切り替えます。
+AgentCoreのようなデフォルト拒否システムでは、`forbid` ポリシーは冗長です。`permit` に一致しない呼び出し元はそもそもブロックされるためです。ただしNL2Cedarは意図を明示するために両方を生成します。このラボでは意図を明確にするため手書きのCedarポリシーをファイルで管理し、`--source` で渡しています。
 
 > **ヒント**: NL2Cedarで良い結果を得るには、WHO（プリンシパル）、WHAT（ツール/アクション）、WHEN（条件）を具体的に記述してください。「アクセスを許可する」のような曖昧な記述は、過度に広いポリシーを生成します。
 
 ### Policy Engineのアタッチ
 
-```python
-gateway_client.update_gateway_policy_engine(
-    gateway_identifier=gateway_id,
-    policy_engine_arn=engine_arn,
-    mode="ENFORCE",  # または初期ロールアウト時は "LOG_ONLY"
-)
+Policy Engine は `agentcore.json` に宣言してアタッチします。`--attach-to-gateways` と
+`--attach-mode` の指定は Policy Engine 側ではなく、AgentCore Gateway の
+`policyEngineConfiguration` として書き込まれます。
+
+```json
+{
+  "policyEngines": [
+    {
+      "name": "cost_estimator_policy_engine",
+      "policies": [
+        {
+          "name": "email_scope_policy",
+          "statement": "// Permit the markdown_to_email tool only for OAuth clients whose access token\n...",
+          "sourceFile": "../../08_policy/policies/email_scope.cedar",
+          "validationMode": "FAIL_ON_ANY_FINDINGS",
+          "enforcementMode": "ACTIVE",
+          "authorizationPhase": "INITIATE"
+        }
+      ]
+    }
+  ],
+  "agentCoreGateways": [
+    {
+      "name": "AWSCostEstimatorGateway",
+      "policyEngineConfiguration": {
+        "policyEngineName": "cost_estimator_policy_engine",
+        "mode": "ENFORCE"
+      }
+    }
+  ]
+}
 ```
 
 `LOG_ONLY` モードは初期導入時に便利です — ポリシーの評価結果はログに記録されますが、リクエストは実際にはブロックされません。問題がないことを確認できたら `ENFORCE` に切り替えます。
+
+`validationMode` は既定で `FAIL_ON_ANY_FINDINGS` です。Cedarの自動推論が過度に許容的・制限的な
+記述や満たされない条件を検出した場合、デプロイが失敗します。意図的な場合は
+`--validation-mode IGNORE_ALL_FINDINGS` を指定します。
 
 ## ガバナンスの利点
 
@@ -266,6 +366,7 @@ gateway_client.update_gateway_policy_engine(
 | **決定論的** | ガードレールと異なり、ポリシーの判断は確率的でない — 同じ入力には常に同じ結果 |
 | **監査証跡** | ポリシーの判定結果がコンプライアンスレビュー用にログとして記録される |
 | **NL2Cedar** | 自然言語から初期ポリシーを生成し、Cedarの学習コストを削減 |
+| **宣言的な管理** | Policy EngineとCedarポリシーが `agentcore.json` と `.cedar` ファイルに集約され、レビュー・バージョン管理できる |
 
 ## まとめ: 多層セキュリティアーキテクチャ
 
@@ -287,6 +388,7 @@ gateway_client.update_gateway_policy_engine(
 - [Cedarポリシー言語](https://www.cedarpolicy.com/)
 - [Cedar Operators Reference](https://docs.cedarpolicy.com/policies/syntax-operators.html)
 - [Cedar Policy Syntax](https://docs.cedarpolicy.com/policies/syntax-policy.html)
+- [AgentCore CLI](https://github.com/aws/agentcore-cli)
 - [Strands Agentsドキュメント](https://github.com/strands-agents/sdk-python)
 
 ---

@@ -98,7 +98,7 @@ uv run agentcore invoke '{"prompt": "東京の天気は？"}'
 - [Kiro CLIドキュメント](https://kiro.dev/cli/)
 - [Amazon Q Developer拡張機能](https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/q-in-IDE-setup.html)
 - [AgentCore Runtime開発者ガイド](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/runtime.html)
-- [Bedrock AgentCore Starter Toolkit](https://github.com/aws/bedrock-agentcore-starter-toolkit)
+- [AgentCore CLI](https://github.com/aws/agentcore-cli)
 
 ---
 

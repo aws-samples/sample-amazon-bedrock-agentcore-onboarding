@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.12"
 
 [[package]]
@@ -1934,10 +1934,14 @@ dependencies = [
     { name = "bedrock-agentcore-starter-toolkit" },
     { name = "boto3" },
     { name = "playwright" },
-    { name = "ruff" },
     { name = "strands-agents" },
     { name = "strands-agents-evals" },
     { name = "strands-agents-tools" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "ruff" },
 ]
 
 [package.metadata]
@@ -1946,11 +1950,13 @@ requires-dist = [
     { name = "bedrock-agentcore-starter-toolkit", specifier = ">=0.1.2" },
     { name = "boto3", specifier = ">=1.39.9" },
     { name = "playwright", specifier = ">=1.58.0" },
-    { name = "ruff", specifier = ">=0.12.4" },
     { name = "strands-agents", specifier = ">=1.0.1" },
     { name = "strands-agents-evals", specifier = ">=0.1.6" },
     { name = "strands-agents-tools", specifier = ">=0.2.1" },
 ]
+
+[package.metadata.requires-dev]
+dev = [{ name = "ruff", specifier = ">=0.12.4" }]
 
 [[package]]
 name = "shellingham"
